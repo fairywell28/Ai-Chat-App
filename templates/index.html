@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI智能对话系统</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <script src="https://unpkg.com/element-plus"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            overflow: hidden;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chat-header {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #f8f9fa;
+        }
+        
+        .message {
+            margin-bottom: 15px;
+            display: flex;
+        }
+        
+        .user-message {
+            justify-content: flex-end;
+        }
+        
+        .ai-message {
+            justify-content: flex-start;
+        }
+        
+        .message-bubble {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 18px;
+            word-wrap: break-word;
+        }
+        
+        .user-bubble {
+            background: #007bff;
+            color: white;
+        }
+        
+        .ai-bubble {
+            background: white;
+            border: 1px solid #e9ecef;
+        }
+        
+        .chat-input {
+            padding: 20px;
+            border-top: 1px solid #e9ecef;
+            background: white;
+        }
+        
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            color: #6c757d;
+            font-style: italic;
+        }
+        
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #6c757d;
+            margin: 0 2px;
+            animation: bounce 1.4s infinite ease-in-out;
+        }
+        
+        .dot:nth-child(1) { animation-delay: -0.32s; }
+        .dot:nth-child(2) { animation-delay: -0.16s; }
+        
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="chat-container">
+            <div class="chat-header">
+                <h2>🤖 AI智能对话系统</h2>
+                <p>基于Python和AI大模型的智能对话应用</p>
+            </div>
+            
+            <div class="chat-messages" ref="messagesContainer">
+                <div v-for="message in messages" :key="message.id" 
+                     :class="['message', message.role === 'user' ? 'user-message' : 'ai-message']">
+                    <div :class="['message-bubble', message.role === 'user' ? 'user-bubble' : 'ai-bubble']">
+                        <div v-if="message.role === 'user'">
+                            <strong>你:</strong> {{ message.content }}
+                        </div>
+                        <div v-else>
+                            <strong>AI助手:</strong> 
+                            <span v-if="message.isTyping" class="typing-indicator">
+                                <span class="dot"></span>
+                                <span class="dot"></span>
+                                <span class="dot"></span>
+                            </span>
+                            <span v-else>{{ message.content }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chat-input">
+                <el-input 
+                    v-model="inputMessage" 
+                    placeholder="输入你的问题..." 
+                    @keyup.enter="sendMessage"
+                    :disabled="isLoading"
+                >
+                    <template #append>
+                        <el-button 
+                            @click="sendMessage" 
+                            :loading="isLoading"
+                            type="primary"
+                        >
+                            发送
+                        </el-button>
+                    </template>
+                </el-input>
+            </div>
+        </div>
+    </div>
+ 
+    <script>
+        const { createApp, ref, onMounted, nextTick } = Vue;
+        const { ElMessage } = ElementPlus;
+        
+        createApp({
+            setup() {
+                const messages = ref([]);
+                const inputMessage = ref('');
+                const isLoading = ref(false);
+                const sessionId = ref('');
+                const messagesContainer = ref(null);
+                
+                // 初始化会话ID
+                if (!sessionId.value) {
+                    sessionId.value = generateSessionId();
+                    loadChatHistory();
+                }
+                
+                function generateSessionId() {
+                    return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                }
+                
+                async function loadChatHistory() {
+                    try {
+                        const response = await fetch(`/api/chat/history/${sessionId.value}`);
+                        if (response.ok) {
+                            const history = await response.json();
+                            messages.value = history.map(item => ({
+                                id: item.id,
+                                role: 'user',
+                                content: item.user_message,
+                                timestamp: item.created_at
+                            })).concat(history.map(item => ({
+                                id: item.id + '_ai',
+                                role: 'assistant',
+                                content: item.ai_response,
+                                timestamp: item.created_at
+                            }))).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                            
+                            scrollToBottom();
+                        }
+                    } catch (error) {
+                        console.error('加载聊天历史失败:', error);
+                    }
+                }
+                
+                async function sendMessage() {
+                    if (!inputMessage.value.trim() || isLoading.value) return;
+                    
+                    const userMessage = inputMessage.value.trim();
+                    inputMessage.value = '';
+                    
+                    // 添加用户消息
+                    const userMsg = {
+                        id: Date.now(),
+                        role: 'user',
+                        content: userMessage,
+                        timestamp: new Date().toISOString()
+                    };
+                    messages.value.push(userMsg);
+                    
+                    // 添加AI响应占位符
+                    const aiMsg = {
+                        id: Date.now() + 1,
+                        role: 'assistant',
+                        content: '',
+                        isTyping: true,
+                        timestamp: new Date().toISOString()
+                    };
+                    messages.value.push(aiMsg);
+                    
+                    scrollToBottom();
+                    isLoading.value = true;
+                    
+                    try {
+                        const response = await fetch('/api/chat/message', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                message: userMessage,
+                                session_id: sessionId.value
+                            })
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            aiMsg.content = data.ai_response;
+                            aiMsg.isTyping = false;
+                        } else {
+                            throw new Error('发送消息失败');
+                        }
+                    } catch (error) {
+                        aiMsg.content = '抱歉，发生错误：' + error.message;
+                        aiMsg.isTyping = false;
+                        ElMessage.error('发送消息失败');
+                    } finally {
+                        isLoading.value = false;
+                        scrollToBottom();
+                    }
+                }
+                
+                function scrollToBottom() {
+                    nextTick(() => {
+                        if (messagesContainer.value) {
+                            messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+                        }
+                    });
+                }
+                
+                onMounted(() => {
+                    scrollToBottom();
+                });
+                
+                return {
+                    messages,
+                    inputMessage,
+                    isLoading,
+                    messagesContainer,
+                    sendMessage
+                };
+            }
+        }).use(ElementPlus).mount('#app');
+    </script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+# coding: utf-8
+from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
+from app.database import create_tables
+from app.api import chat
+import os
+
+# 创建数据库表
+create_tables()
+
+# 创建FastAPI应用实例
+app = FastAPI(
+    title="AI智能对话系统",
+    description="基于Python和AI大模型的智能对话应用",
+    version="1.0.0"
+)
+
+# 配置CORS中间件
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+
+# 配置静态文件和模板
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+# 注册路由
+app.include_router(chat.router)
+
+
+@app.get("/")
+async def root(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
