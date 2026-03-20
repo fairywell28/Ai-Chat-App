@@ -5,7 +5,14 @@ from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import create_tables
 from app.api import chat
+from config import Config
 import os
+from dotenv import load_dotenv
+
+# 加载环境变量和 openai_key，临时用，TODO将来用 config 文件替代
+load_dotenv()
+# 从环境变量中获取 API key
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # 创建数据库表
 create_tables()
@@ -16,6 +23,7 @@ app = FastAPI(
     description="基于Python和AI大模型的智能对话应用",
     version="1.0.0"
 )
+#app.config.from_object(Config['development'])
 
 # 配置CORS中间件
 app.add_middleware(

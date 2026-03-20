@@ -116,7 +116,7 @@
                      :class="['message', message.role === 'user' ? 'user-message' : 'ai-message']">
                     <div :class="['message-bubble', message.role === 'user' ? 'user-bubble' : 'ai-bubble']">
                         <div v-if="message.role === 'user'">
-                            <strong>你:</strong> {{ message.content }}
+                            <strong>你:</strong> <span v-text="message.content"></span>
                         </div>
                         <div v-else>
                             <strong>AI助手:</strong> 
@@ -125,7 +125,7 @@
                                 <span class="dot"></span>
                                 <span class="dot"></span>
                             </span>
-                            <span v-else>{{ message.content }}</span>
+                            <span v-else v-text="message.content"></span>
                         </div>
                     </div>
                 </div>

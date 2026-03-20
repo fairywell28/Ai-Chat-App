@@ -6,6 +6,7 @@ import json
 
 from fastapi import APIRouter, Depends, Response, HTTPException
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Conversation, UserSettings
@@ -14,16 +15,19 @@ from app.services.openai_service import openai_service
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
+class ChatRequest(BaseModel):
+    message: str
+    session_id: str | None = None
+
+
 @router.post("/message")
-async def send_message(
-    message: str,
-    session_id: str = None,
-    db: Session = Depends(get_db)
-):
+async def send_message(payload: ChatRequest, db: Session = Depends(get_db)):
     """
     发送消息并获取AI回复
     """
-    # 生成或使用现有的session_id
+    # 从请求体中获取数据并生成/使用session_id
+    message = payload.message
+    session_id = payload.session_id
     if not session_id:
         session_id = str(uuid.uuid4())
 
@@ -38,7 +42,7 @@ async def send_message(
             session_id=session_id,
             temperature=7,
             max_tokens=1000,
-            model_preference="gpt-3.5-turbo"
+            model_preference="gpt-4.1-mini"
         )
         db.add(user_settings)
         db.commit()
@@ -52,12 +56,14 @@ async def send_message(
 
     try:
         # 调用OpenAI服务
+        #print(f"messages={messages}, model={user_settings.model_preference}, temperature={user_settings.temperature/10.0}, max_tokens={user_settings.max_tokens}")
         response = await openai_service.chat_completion(
             messages=messages,
             model=user_settings.model_preference,
             temperature=user_settings.temperature / 10.0,  # 转换为0-1范围
             max_tokens=user_settings.max_tokens
         )
+        #print(response)
 
         # 保存对话记录
         conversation = Conversation(
@@ -80,15 +86,16 @@ async def send_message(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("message/stream")
+@router.post("/message/stream")
 async def stream_message(
-    message: str,
-    session_id: str = None,
+    payload: ChatRequest,
     db: Session = Depends(get_db)
 ):
     """
     流式消息响应（实时打字效果）
     """
+    message = payload.message
+    session_id = payload.session_id
     if not session_id:
         session_id = str(uuid.uuid4())
 
@@ -103,7 +110,7 @@ async def stream_message(
             session_id=session_id,
             temperature=7,
             max_tokens=1000,
-            model_preference="gpt-3.5-turbo"
+            model_preference="gpt-4.1-mini"
         )
         db.add(user_settings)
         db.commit()
@@ -142,12 +149,12 @@ async def stream_message(
 
     return StreamingResponse(
         generate(),
-        media_type="text/evet-stream",
+        media_type="text/event-stream",
         headers={"Cache-Control": "no-cache"}
     )
 
 
-@router.get("history/{session_id}")
+@router.get("/history/{session_id}")
 async def get_chat_history(
     session_id: str,
     limit: int = 50,
