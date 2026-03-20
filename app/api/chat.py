@@ -6,6 +6,7 @@ import json
 
 from fastapi import APIRouter, Depends, Response, HTTPException
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Conversation, UserSettings
@@ -14,15 +15,20 @@ from app.services.openai_service import openai_service
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
+class ChatRequest(BaseModel):
+    message: str
+    session_id: str | None = None
+
+
 @router.post("/message")
-async def send_message(
-    message: str,
-    session_id: str = None,
-    db: Session = Depends(get_db)
-):
+async def send_message(payload: ChatRequest, db: Session = Depends(get_db)):
     """
     发送消息并获取AI回复
     """
+    # 从请求体中获取数据
+    message = payload.message
+    session_id = payload.session_id
+
     # 生成或使用现有的session_id
     if not session_id:
         session_id = str(uuid.uuid4())
@@ -80,15 +86,14 @@ async def send_message(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("message/stream")
-async def stream_message(
-    message: str,
-    session_id: str = None,
-    db: Session = Depends(get_db)
-):
+@router.post("/message/stream")
+async def stream_message(payload: ChatRequest, db: Session = Depends(get_db)):
     """
     流式消息响应（实时打字效果）
     """
+    message = payload.message
+    session_id = payload.session_id
+
     if not session_id:
         session_id = str(uuid.uuid4())
 
@@ -147,7 +152,7 @@ async def stream_message(
     )
 
 
-@router.get("history/{session_id}")
+@router.get("/history/{session_id}")
 async def get_chat_history(
     session_id: str,
     limit: int = 50,

@@ -3,6 +3,8 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+
+from config import Config, DevelopmentConfig, TestingConfig, ProductionConfig
 from app.database import create_tables
 from app.api import chat
 import os
@@ -16,6 +18,14 @@ app = FastAPI(
     description="基于Python和AI大模型的智能对话应用",
     version="1.0.0"
 )
+
+## 调用环境变量配置类
+#env_config = os.getenv('APP_CONFIG', 'development').lower()
+#config_classes = {
+#    'development': DevelopmentConfig,
+#    'testing': TestingConfig,
+#    'production': ProductionConfig,
+#}
 
 # 配置CORS中间件
 app.add_middleware(

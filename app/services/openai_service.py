@@ -32,7 +32,7 @@ class OpenAIService:
             )
             return response.choices[0].message.content
         except Exception as e:
-            raise Exception("OpenAI API调用失败：{str(e)}")
+            raise Exception(f"OpenAI API调用失败：{str(e)}")
 
 
     async def stream_chat_completion(
