@@ -7,7 +7,20 @@ from app.database import create_tables
 from app.api import chat
 from config import Config
 import os
+import logging
 from dotenv import load_dotenv
+
+
+# 配置日志 Example code: FastAPI logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('chat.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # 加载环境变量和 openai_key，临时用，TODO将来用 config 文件替代
 load_dotenv()
@@ -23,6 +36,7 @@ app = FastAPI(
     description="基于Python和AI大模型的智能对话应用",
     version="1.0.0"
 )
+logger.debug("Please set the config file.")
 #app.config.from_object(Config['development'])
 
 # 配置CORS中间件

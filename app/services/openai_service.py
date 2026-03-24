@@ -1,7 +1,11 @@
 import os
+import logging
 from typing import List, Dict, Optional
 from openai import OpenAI
 
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 class OpenAIService:
     def __init__(self):
@@ -15,6 +19,7 @@ class OpenAIService:
             self.client = OpenAI(base_url="https://api.lingyaai.cn/v1/", api_key=api_key)
         else:
             self.init_error = "OPENAI_API_KEY环境变量未设置"
+            raise RuntimeError(self.init_error or "OpenAI API KEY not initialized")
 
     async def chat_completion(
         self,
@@ -29,6 +34,7 @@ class OpenAIService:
         if not self.client:
             raise RuntimeError(self.init_error or "OpenAI client not initialized")
 
+        logger.debug("Start chat completions...")
         try:
             response = self.client.chat.completions.create(
                 model=model,
@@ -37,6 +43,7 @@ class OpenAIService:
                 max_tokens=max_tokens,
                 stream=False
             )
+            logger.debug("Finished chat completions.")
             return response.choices[0].message.content
         except Exception as e:
             raise RuntimeError(f"OpenAI API调用失败：{str(e)}")

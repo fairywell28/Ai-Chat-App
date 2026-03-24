@@ -3,6 +3,7 @@ from typing import List, Dict
 from datetime import datetime
 import uuid
 import json
+import logging
 
 from fastapi import APIRouter, Depends, Response, HTTPException
 from fastapi.responses import StreamingResponse
@@ -11,6 +12,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Conversation, UserSettings
 from app.services.openai_service import openai_service
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -56,14 +60,15 @@ async def send_message(payload: ChatRequest, db: Session = Depends(get_db)):
 
     try:
         # 调用OpenAI服务
-        #print(f"messages={messages}, model={user_settings.model_preference}, temperature={user_settings.temperature/10.0}, max_tokens={user_settings.max_tokens}")
+        logger.debug(f"messages={messages}, model={user_settings.model_preference}, temperature={user_settings.temperature/10.0}, max_tokens={user_settings.max_tokens}")
+        logger.debug("Start getting response...")
         response = await openai_service.chat_completion(
             messages=messages,
             model=user_settings.model_preference,
             temperature=user_settings.temperature / 10.0,  # 转换为0-1范围
             max_tokens=user_settings.max_tokens
         )
-        #print(response)
+        logger.debug("Finished getting the response.")
 
         # 保存对话记录
         conversation = Conversation(
