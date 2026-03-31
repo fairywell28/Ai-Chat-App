@@ -1,0 +1,184 @@
+@startuml AI-Chat-App_System_Context
+title AI Chat App — System context (deployment view)
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+actor "User" as user
+node "Host" {
+  frame "FastAPI application (uvicorn)" {
+    component [Jinja2 UI\nGET /] as ui
+    component [Chat API\n/api/chat/*] as chatapi
+    component [OpenAIService\napp.services] as oa
+    database "SQLite\n(chat_app.db)" as sql
+  }
+}
+cloud "LLM provider\n(OpenAI-compatible HTTPS)" as llm
+
+user --> ui : browse
+user --> chatapi : JSON (chat, history)
+chatapi --> oa : completions
+chatapi --> sql : SQLAlchemy ORM
+oa --> llm : chat.completions
+
+note right of sql
+  DATABASE_URL
+  default: sqlite:///./chat_app.db
+end note
+
+note right of llm
+  Base URL from OpenAIService
+  (e.g. api.lingyaai.cn/v1)
+end note
+@enduml
+
+
+@startuml AI-Chat-App_Component_Layers
+title AI Chat App — Logical layers & Python modules
+skinparam packageStyle rectangle
+skinparam shadowing false
+
+package "Presentation" #E8F4FC {
+  [app.main] as main
+  note right of main
+    FastAPI app, CORS, static /static,
+    Jinja2 templates, mounts chat router
+  end note
+}
+
+package "API" #FFF8E8 {
+  [app.api.chat] as chat
+  note right of chat
+    APIRouter prefix: /api/chat
+    POST /message, /message/stream
+    GET /history/{session_id}
+  end note
+}
+
+package "Services" #E8FCE8 {
+  [OpenAIService\napp.services.openai_service] as svc
+}
+
+package "Persistence" #F0E8FC {
+  [app.database] as dbmod
+  [SQLAlchemy models\napp.models] as models
+  database "SQLite" as sqlite
+}
+
+package "Configuration" #F5F5F5 {
+  [config.Config] as cfg
+  [.env / env vars] as env
+}
+
+main --> chat : include_router
+chat --> dbmod : get_db()
+chat --> models : Conversation, UserSettings
+chat --> svc : openai_service
+svc --> env : OPENAI_API_KEY
+dbmod --> models : Base, engine, SessionLocal
+dbmod --> sqlite
+cfg .. env : optional (partially wired)
+
+@enduml
+
+
+@startuml AI-Chat-App_Class_Diagram
+title AI Chat App — Domain & service classes (simplified)
+skinparam classAttributeIconSize 0
+hide empty members
+
+class ChatRequest <<Pydantic>> {
+  + message: str
+  + session_id: str | None
+}
+
+class "Base (SQLAlchemy)" as Base <<declarative>> {
+}
+
+class Conversation {
+  + id: int <<PK>>
+  + session_id: str
+  + user_message: str
+  + ai_response: str
+  + created_at: datetime
+  + model_used: str
+}
+
+class UserSettings {
+  + id: int <<PK>>
+  + session_id: str <<unique>>
+  + temperature: int
+  + max_tokens: int
+  + model_preference: str
+  + created_at: datetime
+  + updated_at: datetime
+}
+
+class OpenAIService {
+  - client: OpenAI
+  - init_error: str
+  + chat_completion(...) : str
+  + stream_chat_completion(...) : AsyncIterator
+}
+
+Base <|-- Conversation
+Base <|-- UserSettings
+
+note "Router handlers use Session\nto query/save entities;\nOpenAIService is a\nmodule-level singleton." as N1
+Conversation .. N1
+UserSettings .. N1
+OpenAIService .. N1
+ChatRequest .. N1
+
+@enduml
+
+
+@startuml AI-Chat-App_Sequence_Chat_Message
+title AI Chat App — POST /api/chat/message (non-streaming)
+autonumber
+actor Client
+participant "FastAPI\nchat.send_message" as API
+participant "Session\n(get_db)" as DB
+participant "UserSettings\nConversation" as ORM
+participant "OpenAIService" as OAI
+participant "External\nLLM API" as LLM
+
+Client -> API : ChatRequest { message, session_id? }
+API -> API : ensure session_id (UUID)
+API -> DB : query UserSettings by session_id
+alt no settings
+  API -> DB : insert default UserSettings
+end
+API -> DB : load last 10 turns\n(get_conversation_history)
+DB --> API : messages[]
+API -> API : append user message
+API -> OAI : chat_completion(messages, model, temp, max_tokens)
+OAI -> LLM : chat.completions.create(stream=false)
+LLM --> OAI : completion text
+OAI --> API : response string
+API -> DB : insert Conversation
+API --> Client : JSON { session_id, user_message,\nai_response, timestamp }
+
+@enduml
+
+
+@startuml AI-Chat-App_Sequence_Stream
+title AI Chat App — POST /api/chat/message/stream (SSE)
+autonumber
+actor Client
+participant "FastAPI\nstream_message" as API
+participant "Session" as DB
+participant "OpenAIService" as OAI
+participant "LLM API" as LLM
+
+Client -> API : ChatRequest
+API -> DB : UserSettings + history\n(same as non-stream)
+API -> OAI : stream_chat_completion(...)
+loop chunks
+  OAI -> LLM : stream=True
+  LLM --> OAI : delta content
+  OAI --> API : chunk
+  API --> Client : SSE data: { "content": chunk }
+end
+API -> DB : save full Conversation
+
+@enduml
