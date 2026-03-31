@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
+# setting the default LLM model, @TODO setting by config file in future
+default_llm = "gpt-4.1-mini"
 
 class ChatRequest(BaseModel):
     message: str
@@ -46,7 +48,7 @@ async def send_message(payload: ChatRequest, db: Session = Depends(get_db)):
             session_id=session_id,
             temperature=7,
             max_tokens=1000,
-            model_preference="gpt-4.1-mini"
+            model_preference=default_llm
         )
         db.add(user_settings)
         db.commit()
@@ -115,7 +117,7 @@ async def stream_message(
             session_id=session_id,
             temperature=7,
             max_tokens=1000,
-            model_preference="gpt-4.1-mini"
+            model_preference=default_llm
         )
         db.add(user_settings)
         db.commit()

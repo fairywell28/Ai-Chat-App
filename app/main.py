@@ -11,7 +11,7 @@ import logging
 from dotenv import load_dotenv
 
 
-# 配置日志 Example code: FastAPI logging
+# 配置日志 @ExampleCode: FastAPI logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -22,7 +22,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 加载环境变量和 openai_key，临时用，TODO将来用 config 文件替代
+# 加载环境变量和 openai_key，临时用，@TODO 将来用 config 文件替代
 load_dotenv()
 # 从环境变量中获取 API key
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")

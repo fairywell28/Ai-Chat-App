@@ -5,6 +5,8 @@ from datetime import datetime
 
 Base = declarative_base()
 
+# setting the default LLM model, @TODO setting by config file in future
+default_llm = "gpt-4.1-mini"
 
 class Conversation(Base):
     __tablename__ = "conversations"
@@ -14,7 +16,7 @@ class Conversation(Base):
     user_message = Column(Text, nullable=False)
     ai_response = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    model_used = Column(String(50), default="gpt-3.5-turbo")
+    model_used = Column(String(50), default=default_llm)
 
 
 class UserSettings(Base):
@@ -24,7 +26,7 @@ class UserSettings(Base):
     session_id = Column(String(100), unique=True, index=True)
     temperature = Column(Integer, default=7)  # 0-10, 默认7
     max_tokens = Column(Integer, default=1000)
-    model_preference = Column(String(50), default="gpt-3.5-turbo")
+    model_preference = Column(String(50), default=default_llm)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow,
                         onupdate=datetime.utcnow)
