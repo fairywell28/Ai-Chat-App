@@ -26,11 +26,6 @@ class ChatRequest(BaseModel):
     session_id: str | None = None
 
 
-class ChatRequest(BaseModel):
-    message: str
-    session_id: str | None = None
-
-
 @router.post("/message")
 async def send_message(payload: ChatRequest, db: Session = Depends(get_db)):
     """
