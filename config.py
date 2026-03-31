@@ -18,6 +18,8 @@ class DevelopmentConfig(Config):
 
 class TestingConfig(Config):
     """测试环境配置"""
+    TESTING = True
+    OPENAI_BASE_URL = "https://api.lingyaai.cn/v1/"
 
 
 class ProductionConfig(Config):
@@ -32,3 +34,8 @@ config = {
 
     'default': DevelopmentConfig
 }
+
+def get_config():
+    env = os.getenv('FLASK_ENV', 'default')
+    config_class = config.get(env)
+    return config_class()

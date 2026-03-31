@@ -3,6 +3,7 @@ from typing import List, Dict
 from datetime import datetime
 import uuid
 import json
+import logging
 
 from fastapi import APIRouter, Depends, Response, HTTPException
 from fastapi.responses import StreamingResponse
@@ -12,7 +13,17 @@ from app.database import get_db
 from app.models import Conversation, UserSettings
 from app.services.openai_service import openai_service
 
+# 配置日志
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+
+# setting the default LLM model, @TODO setting by config file in future
+default_llm = "gpt-4.1-mini"
+
+class ChatRequest(BaseModel):
+    message: str
+    session_id: str | None = None
 
 
 class ChatRequest(BaseModel):
@@ -25,11 +36,10 @@ async def send_message(payload: ChatRequest, db: Session = Depends(get_db)):
     """
     发送消息并获取AI回复
     """
-    # 从请求体中获取数据
+    # 从请求体中获取数据并生成/使用session_id
     message = payload.message
     session_id = payload.session_id
 
-    # 生成或使用现有的session_id
     if not session_id:
         session_id = str(uuid.uuid4())
 
@@ -44,7 +54,7 @@ async def send_message(payload: ChatRequest, db: Session = Depends(get_db)):
             session_id=session_id,
             temperature=7,
             max_tokens=1000,
-            model_preference="gpt-3.5-turbo"
+            model_preference=default_llm
         )
         db.add(user_settings)
         db.commit()
@@ -58,12 +68,15 @@ async def send_message(payload: ChatRequest, db: Session = Depends(get_db)):
 
     try:
         # 调用OpenAI服务
+        logger.debug(f"messages={messages}, model={user_settings.model_preference}, temperature={user_settings.temperature/10.0}, max_tokens={user_settings.max_tokens}")
+        logger.debug("Start getting response...")
         response = await openai_service.chat_completion(
             messages=messages,
             model=user_settings.model_preference,
             temperature=user_settings.temperature / 10.0,  # 转换为0-1范围
             max_tokens=user_settings.max_tokens
         )
+        logger.debug("Finished getting the response.")
 
         # 保存对话记录
         conversation = Conversation(
@@ -87,7 +100,10 @@ async def send_message(payload: ChatRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/message/stream")
-async def stream_message(payload: ChatRequest, db: Session = Depends(get_db)):
+async def stream_message(
+    payload: ChatRequest,
+    db: Session = Depends(get_db)
+):
     """
     流式消息响应（实时打字效果）
     """
@@ -108,7 +124,7 @@ async def stream_message(payload: ChatRequest, db: Session = Depends(get_db)):
             session_id=session_id,
             temperature=7,
             max_tokens=1000,
-            model_preference="gpt-3.5-turbo"
+            model_preference=default_llm
         )
         db.add(user_settings)
         db.commit()
@@ -147,7 +163,7 @@ async def stream_message(payload: ChatRequest, db: Session = Depends(get_db)):
 
     return StreamingResponse(
         generate(),
-        media_type="text/evet-stream",
+        media_type="text/event-stream",
         headers={"Cache-Control": "no-cache"}
     )
 

@@ -1,27 +1,41 @@
-import openai
+# coding: utf-8
 import os
+import logging
 from typing import List, Dict, Optional
 from openai import OpenAI
 
+
+# 配置日志
+logger = logging.getLogger(__name__)
+
 class OpenAIService:
     def __init__(self):
-        # 从环境变量获取API密钥
+        # 从环境变量获取API密钥；缺失时不要在导入阶段直接抛错，
+        # 以免导致整个服务无法启动。
         api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY环境变量未设置")
+        self.init_error: Optional[str] = None
+        self.client = None
 
-        self.client = OpenAI(api_key=api_key)
+        if api_key:
+            self.client = OpenAI(base_url="https://api.lingyaai.cn/v1/", api_key=api_key)
+        else:
+            self.init_error = "OPENAI_API_KEY环境变量未设置"
+            raise RuntimeError(self.init_error or "OpenAI API KEY not initialized")
 
     async def chat_completion(
         self,
         messages: List[Dict[str, str]],
-        model: str = "gpt-3.5-turbo",
+        model: str = "gpt-4.1-mini",
         temperature: float = 0.7,
         max_tokens: int = 1000
     ) -> str:
         """
         调用OpenAI聊天补全API
         """
+        if not self.client:
+            raise RuntimeError(self.init_error or "OpenAI client not initialized")
+
+        logger.debug("Start chat completions...")
         try:
             response = self.client.chat.completions.create(
                 model=model,
@@ -30,21 +44,25 @@ class OpenAIService:
                 max_tokens=max_tokens,
                 stream=False
             )
+            logger.debug("Finished chat completions.")
             return response.choices[0].message.content
         except Exception as e:
-            raise Exception(f"OpenAI API调用失败：{str(e)}")
-
+            raise RuntimeError(f"OpenAI API调用失败：{str(e)}")
 
     async def stream_chat_completion(
         self,
         messages: List[Dict[str, str]],
-        model: str = "gpt-3.5-turbo",
+        model: str = "gpt-4.1-mini",
         temperature: float = 0.7,
         max_tokens: int = 1000
     ):
         """
         流式聊天补全（用于实时打字效果）
         """
+        if not self.client:
+            yield f"错误：{self.init_error or 'OpenAI client not initialized'}"
+            return
+
         try:
             response = self.client.chat.completions.create(
                 model=model,

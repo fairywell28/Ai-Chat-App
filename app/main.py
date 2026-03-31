@@ -7,7 +7,27 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import Config, DevelopmentConfig, TestingConfig, ProductionConfig
 from app.database import create_tables
 from app.api import chat
+from config import Config
 import os
+import logging
+from dotenv import load_dotenv
+
+
+# 配置日志 @ExampleCode: FastAPI logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('chat.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# 加载环境变量和 openai_key，临时用，@TODO 将来用 config 文件替代
+load_dotenv()
+# 从环境变量中获取 API key
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # 创建数据库表
 create_tables()
@@ -18,6 +38,8 @@ app = FastAPI(
     description="基于Python和AI大模型的智能对话应用",
     version="1.0.0"
 )
+logger.debug("Please set the config file.")
+#app.config.from_object(Config['development'])
 
 ## 调用环境变量配置类
 #env_config = os.getenv('APP_CONFIG', 'development').lower()
