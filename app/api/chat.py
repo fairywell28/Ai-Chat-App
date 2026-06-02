@@ -5,18 +5,21 @@ import uuid
 import json
 import logging
 
-from fastapi import APIRouter, Depends, Response, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Conversation, UserSettings
 from app.services.openai_service import openai_service
+from app.services.rag_service import rag_service
+from config import get_config
 
 # 配置日志
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+cfg = get_config()
 
 # setting the default LLM model, @TODO setting by config file in future
 default_llm = "gpt-4.1-mini"
@@ -24,6 +27,93 @@ default_llm = "gpt-4.1-mini"
 class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None
+
+
+# @SampleCode Building RAG messages for LLM: history + current + RAG
+def build_rag_messages(
+    history_messages: List[Dict[str, str]],
+    user_message: str,
+    rag_context_docs: List[Dict[str, str]] | List
+) -> List[Dict[str, str]]:
+    if not rag_context_docs:
+        return history_messages + [{"role": "user", "content": user_message}]
+
+    context_blocks = []
+    for idx, doc in enumerate(rag_context_docs, 1):
+        source = doc.metadata.get("filename", "unknown")
+        context_blocks.append(
+            f"[资料{idx} | 来源: {source}]\n{doc.page_content}"
+        )
+
+    rag_instruction = (
+        "你是专业的AI助手。回答用户问题时，请优先依据提供的资料内容。"
+        "如果资料中无法支持结论，请明确说明并给出通用建议，不要编造来源。"
+        "\n\n"
+        "以下是可参考资料：\n"
+        f"{chr(10).join(context_blocks)}"
+    )
+    return [{"role": "system", "content": rag_instruction}] + history_messages + [
+        {"role": "user", "content": user_message}
+    ]
+
+
+@router.post("/upload")
+async def upload_files(
+    session_id: str = Form(...),
+    files: List[UploadFile] = File(...),
+):
+    if not rag_service.enabled:
+        raise HTTPException(status_code=503, detail=rag_service.disabled_reason)
+
+    try:
+        chunk_count, accepted_files = await rag_service.ingest_files(session_id, files)
+        if not accepted_files:
+            raise HTTPException(
+                status_code=400,
+                detail="未检测到可支持的文件类型，请上传 txt/md/csv/json/pdf/py/log 文件。",
+            )
+        return {
+            "session_id": session_id,
+            "uploaded_files": accepted_files,
+            "indexed_chunks": chunk_count,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("RAG文件上传处理失败")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/files/{session_id}")
+async def list_uploaded_files(session_id: str):
+    if not rag_service.enabled:
+        raise HTTPException(status_code=503, detail=rag_service.disabled_reason)
+    return {
+        "session_id": session_id,
+        "files": rag_service.list_files(session_id),
+    }
+
+
+@router.delete("/files/{session_id}")
+async def delete_uploaded_file(session_id: str, filename: str):
+    if not rag_service.enabled:
+        raise HTTPException(status_code=503, detail=rag_service.disabled_reason)
+    deleted = rag_service.delete_file(session_id, filename)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"文件不存在: {filename}")
+    return {"session_id": session_id, "deleted_file": filename}
+
+
+@router.post("/files/{session_id}/reindex")
+async def reindex_files(session_id: str):
+    if not rag_service.enabled:
+        raise HTTPException(status_code=503, detail=rag_service.disabled_reason)
+    try:
+        chunks = rag_service.reindex_session(session_id)
+        return {"session_id": session_id, "indexed_chunks": chunks}
+    except Exception as e:
+        logger.exception("RAG重建索引失败")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/message")
@@ -58,8 +148,14 @@ async def send_message(payload: ChatRequest, db: Session = Depends(get_db)):
     # 构建历史对话
     conversation_history = await get_conversation_history(session_id, db)
 
-    # 添加用户新消息
-    messages = conversation_history + [{"role": "user", "content": message}]
+    # 添加用户新消息（结合RAG检索）
+    rag_docs = rag_service.retrieve_context(
+        session_id=session_id,
+        query=message,
+        k=cfg.RAG_TOP_K,
+    )
+    citations = rag_service.citations_from_docs(rag_docs)
+    messages = build_rag_messages(conversation_history, message, rag_docs)
 
     try:
         # 调用OpenAI服务
@@ -87,6 +183,7 @@ async def send_message(payload: ChatRequest, db: Session = Depends(get_db)):
             "session_id": session_id,
             "user_message": message,
             "ai_response": response,
+            "citations": citations,
             "timestamp": datetime.utcnow().isoformat()
         }
 
@@ -128,12 +225,19 @@ async def stream_message(
     # 构建历史对话
     conversation_history = await get_conversation_history(session_id, db)
 
-    # 添加用户新消息
-    messages = conversation_history + [{"role": "user", "content": message}]
+    # 添加用户新消息（结合RAG检索）
+    rag_docs = rag_service.retrieve_context(
+        session_id=session_id,
+        query=message,
+        k=cfg.RAG_TOP_K,
+    )
+    citations = rag_service.citations_from_docs(rag_docs)
+    messages = build_rag_messages(conversation_history, message, rag_docs)
 
     async def generate():
         try:
             full_response = ""
+            yield f"data: {json.dumps({'citations': citations})}\n\n"
             async for chunk in openai_service.stream_chat_completion(
                 messages=messages,
                 model=user_settings.model_preference,

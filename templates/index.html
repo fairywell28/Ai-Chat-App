@@ -77,6 +77,58 @@
             border-top: 1px solid #e9ecef;
             background: white;
         }
+
+        .input-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+        }
+
+        .input-main {
+            flex: 1;
+            min-width: 0;
+            max-width: none;
+        }
+
+        .input-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .upload-status {
+            margin-bottom: 8px;
+            color: #606266;
+            font-size: 13px;
+        }
+
+        .file-actions {
+            margin-bottom: 8px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .file-chip-wrap {
+            margin-bottom: 8px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .citation-list {
+            margin-top: 8px;
+            border-top: 1px dashed #dcdfe6;
+            padding-top: 8px;
+            font-size: 12px;
+            color: #606266;
+        }
+
+        .citation-item {
+            margin-top: 4px;
+            line-height: 1.4;
+        }
         
         .typing-indicator {
             display: flex;
@@ -127,28 +179,67 @@
                                 <span class="dot"></span>
                             </span>
                             <span v-else v-text="message.content"></span>
+                            <div v-if="message.citations && message.citations.length" class="citation-list">
+                                <div><strong>参考资料：</strong></div>
+                                <div v-for="citation in message.citations" :key="citation.id" class="citation-item">
+                                    [{{ citation.id }}] {{ citation.filename }} - {{ citation.snippet }}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
             
             <div class="chat-input">
-                <el-input 
-                    v-model="inputMessage" 
-                    placeholder="输入你的问题..." 
-                    @keyup.enter="sendMessage"
-                    :disabled="isLoading"
-                >
-                    <template #append>
-                        <el-button 
-                            @click="sendMessage" 
+                <div v-if="uploadedFiles.length" class="upload-status">
+                    已上传资料（{{ uploadedFiles.length }}）
+                </div>
+                <div v-if="uploadedFiles.length" class="file-chip-wrap">
+                    <el-tag
+                        v-for="filename in uploadedFiles"
+                        :key="filename"
+                        closable
+                        @close="deleteUploadedFile(filename)"
+                    >
+                        {{ filename }}
+                    </el-tag>
+                </div>
+                <div class="file-actions">
+                    <el-button size="small" @click="refreshUploadedFiles">刷新文件列表</el-button>
+                    <el-button size="small" @click="reindexFiles" :loading="isReindexing">重建索引</el-button>
+                </div>
+                <div class="input-row">
+                    <el-input
+                        class="input-main"
+                        v-model="inputMessage"
+                        placeholder="输入你的问题..."
+                        @keyup.enter="sendMessage"
+                        :disabled="isLoading"
+                    ></el-input>
+                    <input
+                        ref="fileInput"
+                        type="file"
+                        multiple
+                        style="display: none;"
+                        accept=".txt,.md,.csv,.json,.pdf,.py,.log"
+                        @change="onFileSelected"
+                    />
+                    <div class="input-actions">
+                        <el-button
+                            @click="triggerFileSelect"
+                            :loading="isUploading"
+                        >
+                            📎 添加文件
+                        </el-button>
+                        <el-button
+                            @click="sendMessage"
                             :loading="isLoading"
                             type="primary"
                         >
                             发送
                         </el-button>
-                    </template>
-                </el-input>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -163,13 +254,18 @@
                 const messages = ref([]);
                 const inputMessage = ref('');
                 const isLoading = ref(false);
+                const isUploading = ref(false);
+                const isReindexing = ref(false);
                 const sessionId = ref('');
                 const messagesContainer = ref(null);
+                const fileInput = ref(null);
+                const uploadedFiles = ref([]);
                 
                 // 初始化会话ID
                 if (!sessionId.value) {
                     sessionId.value = generateSessionId();
                     loadChatHistory();
+                    refreshUploadedFiles();
                 }
                 
                 function generateSessionId() {
@@ -244,6 +340,7 @@
                             const data = await response.json();
                             aiMsg.content = data.ai_response;
                             aiMsg.isTyping = false;
+                            aiMsg.citations = data.citations || [];
                         } else {
                             throw new Error('发送消息失败');
                         }
@@ -254,6 +351,92 @@
                     } finally {
                         isLoading.value = false;
                         scrollToBottom();
+                    }
+                }
+
+                function triggerFileSelect() {
+                    if (isUploading.value || isLoading.value) return;
+                    fileInput.value?.click();
+                }
+
+                async function onFileSelected(event) {
+                    const files = event.target.files;
+                    if (!files || !files.length) return;
+
+                    const formData = new FormData();
+                    formData.append('session_id', sessionId.value);
+                    Array.from(files).forEach(file => formData.append('files', file));
+
+                    isUploading.value = true;
+                    try {
+                        const response = await fetch('/api/chat/upload', {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        if (!response.ok) {
+                            const err = await response.json().catch(() => ({}));
+                            throw new Error(err.detail || '文件上传失败');
+                        }
+
+                        const data = await response.json();
+                        uploadedFiles.value = Array.from(new Set([...(data.uploaded_files || [])]));
+                        ElMessage.success(`上传成功，已索引 ${data.indexed_chunks} 个文本片段`);
+                        await refreshUploadedFiles();
+                    } catch (error) {
+                        ElMessage.error(error.message || '文件上传失败');
+                    } finally {
+                        isUploading.value = false;
+                        event.target.value = '';
+                    }
+                }
+
+                async function refreshUploadedFiles() {
+                    try {
+                        const response = await fetch(`/api/chat/files/${sessionId.value}`);
+                        if (!response.ok) {
+                            return;
+                        }
+                        const data = await response.json();
+                        uploadedFiles.value = (data.files || []).map(item => item.filename);
+                    } catch (error) {
+                        console.error('获取文件列表失败:', error);
+                    }
+                }
+
+                async function deleteUploadedFile(filename) {
+                    try {
+                        const response = await fetch(
+                            `/api/chat/files/${sessionId.value}?filename=${encodeURIComponent(filename)}`,
+                            { method: 'DELETE' }
+                        );
+                        if (!response.ok) {
+                            const err = await response.json().catch(() => ({}));
+                            throw new Error(err.detail || '删除文件失败');
+                        }
+                        uploadedFiles.value = uploadedFiles.value.filter(f => f !== filename);
+                        ElMessage.success(`已删除文件：${filename}`);
+                    } catch (error) {
+                        ElMessage.error(error.message || '删除文件失败');
+                    }
+                }
+
+                async function reindexFiles() {
+                    isReindexing.value = true;
+                    try {
+                        const response = await fetch(`/api/chat/files/${sessionId.value}/reindex`, {
+                            method: 'POST'
+                        });
+                        if (!response.ok) {
+                            const err = await response.json().catch(() => ({}));
+                            throw new Error(err.detail || '重建索引失败');
+                        }
+                        const data = await response.json();
+                        ElMessage.success(`重建索引完成，共 ${data.indexed_chunks} 个片段`);
+                    } catch (error) {
+                        ElMessage.error(error.message || '重建索引失败');
+                    } finally {
+                        isReindexing.value = false;
                     }
                 }
                 
@@ -273,8 +456,17 @@
                     messages,
                     inputMessage,
                     isLoading,
+                    isUploading,
+                    isReindexing,
                     messagesContainer,
-                    sendMessage
+                    fileInput,
+                    uploadedFiles,
+                    sendMessage,
+                    triggerFileSelect,
+                    onFileSelected,
+                    refreshUploadedFiles,
+                    deleteUploadedFile,
+                    reindexFiles
                 };
             }
         }).use(ElementPlus).mount('#app');

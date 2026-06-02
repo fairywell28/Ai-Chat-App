@@ -1,24 +1,33 @@
 @startuml AI-Chat-App_System_Context
-title AI Chat App — System context (deployment view)
+title AI Chat App — System context (RAG-enabled)
 skinparam componentStyle rectangle
 skinparam shadowing false
 
 actor "User" as user
 node "Host" {
   frame "FastAPI application (uvicorn)" {
-    component [Jinja2 UI\nGET /] as ui
+    component [Jinja2 UI\nGET / + file actions] as ui
     component [Chat API\n/api/chat/*] as chatapi
     component [OpenAIService\napp.services] as oa
+    component [RAGService\nLangChain + FAISS] as rag
     database "SQLite\n(chat_app.db)" as sql
+    folder "Uploaded files\n(data/uploads/<session>)" as files
+    folder "Vector indexes\n(data/rag_indexes/<session>)" as index
   }
 }
 cloud "LLM provider\n(OpenAI-compatible HTTPS)" as llm
+cloud "Embedding API\n(OpenAI-compatible HTTPS)" as emb
 
 user --> ui : browse
-user --> chatapi : JSON (chat, history)
+user --> chatapi : JSON (chat, history, citations)
+user --> chatapi : multipart upload/delete/reindex
 chatapi --> oa : completions
+chatapi --> rag : retrieve_context / ingest / manage
 chatapi --> sql : SQLAlchemy ORM
+rag --> files : read/write
+rag --> index : read/write
 oa --> llm : chat.completions
+rag --> emb : embeddings
 
 note right of sql
   DATABASE_URL
@@ -33,7 +42,7 @@ end note
 
 
 @startuml AI-Chat-App_Component_Layers
-title AI Chat App — Logical layers & Python modules
+title AI Chat App — Logical layers & modules (RAG-enabled)
 skinparam packageStyle rectangle
 skinparam shadowing false
 
@@ -49,19 +58,25 @@ package "API" #FFF8E8 {
   [app.api.chat] as chat
   note right of chat
     APIRouter prefix: /api/chat
-    POST /message, /message/stream
+    POST /message, /message/stream, /upload
+    GET /files/{session_id}
+    DELETE /files/{session_id}?filename=...
+    POST /files/{session_id}/reindex
     GET /history/{session_id}
   end note
 }
 
 package "Services" #E8FCE8 {
   [OpenAIService\napp.services.openai_service] as svc
+  [RAGService\napp.services.rag_service] as ragsvc
 }
 
 package "Persistence" #F0E8FC {
   [app.database] as dbmod
   [SQLAlchemy models\napp.models] as models
   database "SQLite" as sqlite
+  [FAISS indexes\ndata/rag_indexes] as faiss
+  [Uploaded files\ndata/uploads] as uploads
 }
 
 package "Configuration" #F5F5F5 {
@@ -73,6 +88,11 @@ main --> chat : include_router
 chat --> dbmod : get_db()
 chat --> models : Conversation, UserSettings
 chat --> svc : openai_service
+chat --> ragsvc : rag_service
+ragsvc --> env : OPENAI_API_KEY / OPENAI_BASE_URL
+ragsvc --> cfg : RAG_CHUNK_SIZE / OVERLAP / TOP_K
+ragsvc --> faiss
+ragsvc --> uploads
 svc --> env : OPENAI_API_KEY
 dbmod --> models : Base, engine, SessionLocal
 dbmod --> sqlite
@@ -82,7 +102,7 @@ cfg .. env : optional (partially wired)
 
 
 @startuml AI-Chat-App_Class_Diagram
-title AI Chat App — Domain & service classes (simplified)
+title AI Chat App — Domain + RAG classes (simplified)
 skinparam classAttributeIconSize 0
 hide empty members
 
@@ -120,27 +140,42 @@ class OpenAIService {
   + stream_chat_completion(...) : AsyncIterator
 }
 
+class RAGService {
+  + enabled: bool
+  + disabled_reason: str
+  + top_k: int
+  + ingest_files(session_id, files) : (int, List[str])
+  + retrieve_context(session_id, query, k) : List[Document]
+  + citations_from_docs(docs) : List[Dict]
+  + list_files(session_id) : List[Dict]
+  + delete_file(session_id, filename) : bool
+  + reindex_session(session_id) : int
+}
+
 Base <|-- Conversation
 Base <|-- UserSettings
 
-note "Router handlers use Session\nto query/save entities;\nOpenAIService is a\nmodule-level singleton." as N1
+note "Router handlers use Session\nto query/save entities;\nOpenAIService and RAGService are\nmodule-level singletons." as N1
 Conversation .. N1
 UserSettings .. N1
 OpenAIService .. N1
+RAGService .. N1
 ChatRequest .. N1
 
 @enduml
 
 
 @startuml AI-Chat-App_Sequence_Chat_Message
-title AI Chat App — POST /api/chat/message (non-streaming)
+title AI Chat App — POST /api/chat/message (with RAG)
 autonumber
 actor Client
 participant "FastAPI\nchat.send_message" as API
 participant "Session\n(get_db)" as DB
 participant "UserSettings\nConversation" as ORM
+participant "RAGService" as RAG
 participant "OpenAIService" as OAI
 participant "External\nLLM API" as LLM
+participant "Embedding/Vector\nStore" as VS
 
 Client -> API : ChatRequest { message, session_id? }
 API -> API : ensure session_id (UUID)
@@ -150,7 +185,11 @@ alt no settings
 end
 API -> DB : load last 10 turns\n(get_conversation_history)
 DB --> API : messages[]
-API -> API : append user message
+API -> RAG : retrieve_context(session, query, top_k)
+RAG -> VS : similarity_search
+VS --> RAG : relevant docs
+RAG --> API : docs + citations
+API -> API : build_rag_messages + append user
 API -> OAI : chat_completion(messages, model, temp, max_tokens)
 OAI -> LLM : chat.completions.create(stream=false)
 LLM --> OAI : completion text
@@ -162,16 +201,20 @@ API --> Client : JSON { session_id, user_message,\nai_response, timestamp }
 
 
 @startuml AI-Chat-App_Sequence_Stream
-title AI Chat App — POST /api/chat/message/stream (SSE)
+title AI Chat App — POST /api/chat/message/stream (SSE + citations)
 autonumber
 actor Client
 participant "FastAPI\nstream_message" as API
 participant "Session" as DB
+participant "RAGService" as RAG
 participant "OpenAIService" as OAI
 participant "LLM API" as LLM
 
 Client -> API : ChatRequest
 API -> DB : UserSettings + history\n(same as non-stream)
+API -> RAG : retrieve_context(session, query)
+RAG --> API : docs + citations
+API --> Client : SSE data: { citations: [...] }
 API -> OAI : stream_chat_completion(...)
 loop chunks
   OAI -> LLM : stream=True
@@ -180,5 +223,39 @@ loop chunks
   API --> Client : SSE data: { "content": chunk }
 end
 API -> DB : save full Conversation
+
+@enduml
+
+
+@startuml AI-Chat-App_Sequence_File_Management
+title AI Chat App — File upload / delete / reindex flow
+autonumber
+actor Client
+participant "FastAPI\nchat endpoints" as API
+participant "RAGService" as RAG
+participant "Uploads dir" as UP
+participant "FAISS index" as IDX
+participant "Embedding API" as EMB
+
+Client -> API : POST /api/chat/upload\n(multipart: session_id + files)
+API -> RAG : ingest_files(session_id, files)
+RAG -> UP : save files
+RAG -> EMB : embed chunks
+RAG -> IDX : create/update index
+RAG --> API : indexed_chunks + uploaded_files
+API --> Client : upload result
+
+Client -> API : DELETE /api/chat/files/{session_id}?filename=...
+API -> RAG : delete_file(...)
+RAG -> UP : remove file
+RAG -> IDX : rebuild from remaining files
+API --> Client : deleted_file
+
+Client -> API : POST /api/chat/files/{session_id}/reindex
+API -> RAG : reindex_session(...)
+RAG -> UP : read all files
+RAG -> EMB : re-embed all chunks
+RAG -> IDX : overwrite index
+API --> Client : indexed_chunks
 
 @enduml
