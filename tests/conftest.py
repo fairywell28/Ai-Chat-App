@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.main import app
 from app.api import chat
-from app.models import Base
+from app.models import Base, Conversation, UserSettings
 
 
 @pytest.fixture(scope="session")
@@ -47,6 +47,14 @@ def client(db_session):
     with TestClient(app) as tc:
         yield tc
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def clean_db_tables(db_session):
+    db_session.query(Conversation).delete()
+    db_session.query(UserSettings).delete()
+    db_session.commit()
+    yield
 
 
 @pytest.fixture(autouse=True)

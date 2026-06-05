@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
     <script src="https://unpkg.com/element-plus"></script>
     <style>
+        * { box-sizing: border-box; }
         body {
             margin: 0;
             padding: 0;
@@ -15,63 +16,171 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
         }
-        
-        .chat-container {
-            max-width: 800px;
+
+        .app-shell {
+            max-width: 1200px;
             margin: 0 auto;
+            padding: 16px;
+            height: 100vh;
+            display: flex;
+            gap: 12px;
+        }
+
+        .session-sidebar {
+            width: 260px;
+            flex-shrink: 0;
+            background: #1e293b;
+            color: #e2e8f0;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+        }
+
+        .sidebar-header {
+            padding: 16px;
+            border-bottom: 1px solid #334155;
+        }
+
+        .sidebar-header h3 {
+            margin: 0 0 12px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #f8fafc;
+        }
+
+        .session-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .session-item {
+            width: 100%;
+            text-align: left;
+            border: none;
+            background: transparent;
+            color: inherit;
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 4px;
+            transition: background 0.15s ease;
+        }
+
+        .session-item:hover {
+            background: #334155;
+        }
+
+        .session-item.active {
+            background: #2563eb;
+            color: #fff;
+        }
+
+        .session-title {
+            font-size: 13px;
+            font-weight: 500;
+            line-height: 1.35;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .session-meta {
+            margin-top: 4px;
+            font-size: 11px;
+            opacity: 0.75;
+        }
+
+        .session-empty {
+            padding: 16px 12px;
+            font-size: 13px;
+            color: #94a3b8;
+            line-height: 1.5;
+        }
+
+        .chat-container {
+            flex: 1;
+            min-width: 0;
             background: white;
             border-radius: 10px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
             overflow: hidden;
-            height: 90vh;
             display: flex;
             flex-direction: column;
         }
-        
+
         .chat-header {
             background: #2c3e50;
             color: white;
-            padding: 20px;
-            text-align: center;
+            padding: 16px 20px;
         }
-        
+
+        .chat-header h2 {
+            margin: 0 0 4px;
+            font-size: 1.25rem;
+        }
+
+        .chat-header p {
+            margin: 0;
+            font-size: 13px;
+            opacity: 0.85;
+        }
+
+        .session-badge {
+            display: inline-block;
+            margin-top: 8px;
+            font-size: 11px;
+            background: rgba(255, 255, 255, 0.15);
+            padding: 2px 8px;
+            border-radius: 999px;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         .chat-messages {
             flex: 1;
             padding: 20px;
             overflow-y: auto;
             background: #f8f9fa;
         }
-        
+
+        .messages-empty {
+            color: #6c757d;
+            text-align: center;
+            margin-top: 40px;
+            font-size: 14px;
+        }
+
         .message {
             margin-bottom: 15px;
             display: flex;
         }
-        
-        .user-message {
-            justify-content: flex-end;
-        }
-        
-        .ai-message {
-            justify-content: flex-start;
-        }
-        
+
+        .user-message { justify-content: flex-end; }
+        .ai-message { justify-content: flex-start; }
+
         .message-bubble {
             max-width: 70%;
             padding: 12px 16px;
             border-radius: 18px;
             word-wrap: break-word;
         }
-        
+
         .user-bubble {
             background: #007bff;
             color: white;
         }
-        
+
         .ai-bubble {
             background: white;
             border: 1px solid #e9ecef;
         }
-        
+
         .chat-input {
             padding: 20px;
             border-top: 1px solid #e9ecef;
@@ -88,7 +197,6 @@
         .input-main {
             flex: 1;
             min-width: 0;
-            max-width: none;
         }
 
         .input-actions {
@@ -129,14 +237,14 @@
             margin-top: 4px;
             line-height: 1.4;
         }
-        
+
         .typing-indicator {
             display: flex;
             align-items: center;
             color: #6c757d;
             font-style: italic;
         }
-        
+
         .dot {
             width: 8px;
             height: 8px;
@@ -145,110 +253,171 @@
             margin: 0 2px;
             animation: bounce 1.4s infinite ease-in-out;
         }
-        
+
         .dot:nth-child(1) { animation-delay: -0.32s; }
         .dot:nth-child(2) { animation-delay: -0.16s; }
-        
+
         @keyframes bounce {
             0%, 80%, 100% { transform: scale(0); }
             40% { transform: scale(1); }
+        }
+
+        @media (max-width: 900px) {
+            .app-shell {
+                flex-direction: column;
+                height: auto;
+                min-height: 100vh;
+            }
+            .session-sidebar {
+                width: 100%;
+                max-height: 220px;
+            }
+            .chat-container {
+                min-height: 70vh;
+            }
         }
     </style>
 </head>
 <body>
     {% raw %}
     <div id="app">
-        <div class="chat-container">
-            <div class="chat-header">
-                <h2>🤖 AI智能对话系统</h2>
-                <p>基于Python和AI大模型的智能对话应用</p>
-            </div>
-            
-            <div class="chat-messages" ref="messagesContainer">
-                <div v-for="message in messages" :key="message.id" 
-                     :class="['message', message.role === 'user' ? 'user-message' : 'ai-message']">
-                    <div :class="['message-bubble', message.role === 'user' ? 'user-bubble' : 'ai-bubble']">
-                        <div v-if="message.role === 'user'">
-                            <strong>你:</strong> <span v-text="message.content"></span>
+        <div class="app-shell">
+            <aside class="session-sidebar">
+                <div class="sidebar-header">
+                    <h3>最近会话</h3>
+                    <el-button type="primary" size="small" style="width: 100%;" @click="startNewChat" :disabled="isLoading">
+                        ＋ 新对话
+                    </el-button>
+                </div>
+                <div class="session-list">
+                    <div v-if="isSessionsLoading" class="session-empty">加载会话中…</div>
+                    <div v-else-if="!recentSessions.length" class="session-empty">
+                        暂无历史会话。发送第一条消息后，会话会出现在这里。
+                    </div>
+                    <button
+                        v-for="session in recentSessions"
+                        :key="session.session_id"
+                        type="button"
+                        :class="['session-item', { active: session.session_id === sessionId }]"
+                        @click="selectSession(session.session_id)"
+                    >
+                        <div class="session-title" v-text="session.title"></div>
+                        <div class="session-meta">
+                            {{ session.message_count }} 轮 · {{ formatSessionTime(session.updated_at) }}
                         </div>
-                        <div v-else>
-                            <strong>AI助手:</strong> 
-                            <span v-if="message.isTyping" class="typing-indicator">
-                                <span class="dot"></span>
-                                <span class="dot"></span>
-                                <span class="dot"></span>
-                            </span>
-                            <span v-else v-text="message.content"></span>
-                            <div v-if="message.citations && message.citations.length" class="citation-list">
-                                <div><strong>参考资料：</strong></div>
-                                <div v-for="citation in message.citations" :key="citation.id" class="citation-item">
-                                    [{{ citation.id }}] {{ citation.filename }} - {{ citation.snippet }}
+                    </button>
+                </div>
+            </aside>
+
+            <div class="chat-container">
+                <div class="chat-header">
+                    <h2>🤖 AI智能对话系统</h2>
+                    <p>基于 Python 和 AI 大模型的智能对话应用</p>
+                    <span class="session-badge" :title="sessionId">会话: {{ shortSessionId }}</span>
+                </div>
+
+                <div class="chat-messages" ref="messagesContainer">
+                    <div v-if="!messages.length && !isHistoryLoading" class="messages-empty">
+                        选择左侧会话或开始新对话
+                    </div>
+                    <div v-for="message in messages" :key="message.id"
+                         :class="['message', message.role === 'user' ? 'user-message' : 'ai-message']">
+                        <div :class="['message-bubble', message.role === 'user' ? 'user-bubble' : 'ai-bubble']">
+                            <div v-if="message.role === 'user'">
+                                <strong>你:</strong> <span v-text="message.content"></span>
+                            </div>
+                            <div v-else>
+                                <strong>AI助手:</strong>
+                                <span v-if="message.isTyping" class="typing-indicator">
+                                    <span class="dot"></span>
+                                    <span class="dot"></span>
+                                    <span class="dot"></span>
+                                </span>
+                                <span v-else v-text="message.content"></span>
+                                <div v-if="message.citations && message.citations.length" class="citation-list">
+                                    <div><strong>参考资料：</strong></div>
+                                    <div v-for="citation in message.citations" :key="citation.id" class="citation-item">
+                                        [{{ citation.id }}] {{ citation.filename }} - {{ citation.snippet }}
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
-            
-            <div class="chat-input">
-                <div v-if="uploadedFiles.length" class="upload-status">
-                    已上传资料（{{ uploadedFiles.length }}）
-                </div>
-                <div v-if="uploadedFiles.length" class="file-chip-wrap">
-                    <el-tag
-                        v-for="filename in uploadedFiles"
-                        :key="filename"
-                        closable
-                        @close="deleteUploadedFile(filename)"
-                    >
-                        {{ filename }}
-                    </el-tag>
-                </div>
-                <div class="file-actions">
-                    <el-button size="small" @click="refreshUploadedFiles">刷新文件列表</el-button>
-                    <el-button size="small" @click="reindexFiles" :loading="isReindexing">重建索引</el-button>
-                </div>
-                <div class="input-row">
-                    <el-input
-                        class="input-main"
-                        v-model="inputMessage"
-                        placeholder="输入你的问题..."
-                        @keyup.enter="sendMessage"
-                        :disabled="isLoading"
-                    ></el-input>
-                    <input
-                        ref="fileInput"
-                        type="file"
-                        multiple
-                        style="display: none;"
-                        accept=".txt,.md,.csv,.json,.pdf,.py,.log"
-                        @change="onFileSelected"
-                    />
-                    <div class="input-actions">
-                        <el-button
-                            @click="triggerFileSelect"
-                            :loading="isUploading"
+
+                <div class="chat-input">
+                    <div v-if="uploadedFiles.length" class="upload-status">
+                        已上传资料（{{ uploadedFiles.length }}）
+                    </div>
+                    <div v-if="uploadedFiles.length" class="file-chip-wrap">
+                        <el-tag
+                            v-for="filename in uploadedFiles"
+                            :key="filename"
+                            closable
+                            @close="deleteUploadedFile(filename)"
                         >
-                            📎 添加文件
-                        </el-button>
-                        <el-button
-                            @click="sendMessage"
-                            :loading="isLoading"
-                            type="primary"
-                        >
-                            发送
-                        </el-button>
+                            {{ filename }}
+                        </el-tag>
+                    </div>
+                    <div class="file-actions">
+                        <el-button size="small" @click="refreshUploadedFiles">刷新文件列表</el-button>
+                        <el-button size="small" @click="reindexFiles" :loading="isReindexing">重建索引</el-button>
+                    </div>
+                    <div class="input-row">
+                        <el-input
+                            class="input-main"
+                            v-model="inputMessage"
+                            placeholder="输入你的问题…"
+                            @keyup.enter="sendMessage"
+                            :disabled="isLoading || isHistoryLoading"
+                        ></el-input>
+                        <input
+                            ref="fileInput"
+                            type="file"
+                            multiple
+                            style="display: none;"
+                            accept=".txt,.md,.csv,.json,.pdf,.py,.log"
+                            @change="onFileSelected"
+                        />
+                        <div class="input-actions">
+                            <el-button @click="triggerFileSelect" :loading="isUploading">📎 添加文件</el-button>
+                            <el-button @click="sendMessage" :loading="isLoading" type="primary">发送</el-button>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
     {% endraw %}
- 
+
     <script>
-        const { createApp, ref, onMounted, nextTick } = Vue;
+        const { createApp, ref, computed, onMounted, nextTick } = Vue;
         const { ElMessage } = ElementPlus;
-        
+
+        const STORAGE_KEY = 'chat_active_session_id';
+
+        function generateSessionId() {
+            return 'session_' + Date.now() + '_' + Math.random().toString(36).slice(2, 11);
+        }
+
+        function historyToMessages(history) {
+            return history.flatMap((item) => [
+                {
+                    id: `${item.id}-user`,
+                    role: 'user',
+                    content: item.user_message,
+                    timestamp: item.created_at,
+                },
+                {
+                    id: `${item.id}-ai`,
+                    role: 'assistant',
+                    content: item.ai_response,
+                    timestamp: item.created_at,
+                    citations: [],
+                },
+            ]);
+        }
+
         createApp({
             setup() {
                 const messages = ref([]);
@@ -256,98 +425,155 @@
                 const isLoading = ref(false);
                 const isUploading = ref(false);
                 const isReindexing = ref(false);
+                const isHistoryLoading = ref(false);
+                const isSessionsLoading = ref(false);
                 const sessionId = ref('');
+                const recentSessions = ref([]);
                 const messagesContainer = ref(null);
                 const fileInput = ref(null);
                 const uploadedFiles = ref([]);
-                
-                // 初始化会话ID
-                if (!sessionId.value) {
-                    sessionId.value = generateSessionId();
-                    loadChatHistory();
-                    refreshUploadedFiles();
-                }
-                
-                function generateSessionId() {
-                    return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                }
-                
-                async function loadChatHistory() {
-                    try {
-                        const response = await fetch(`/api/chat/history/${sessionId.value}`);
-                        if (response.ok) {
-                            const history = await response.json();
-                            messages.value = history.map(item => ({
-                                id: item.id,
-                                role: 'user',
-                                content: item.user_message,
-                                timestamp: item.created_at
-                            })).concat(history.map(item => ({
-                                id: item.id + '_ai',
-                                role: 'assistant',
-                                content: item.ai_response,
-                                timestamp: item.created_at
-                            }))).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-                            
-                            scrollToBottom();
-                        }
-                    } catch (error) {
-                        console.error('加载聊天历史失败:', error);
+
+                const shortSessionId = computed(() => {
+                    const id = sessionId.value || '';
+                    if (id.length <= 20) return id;
+                    return id.slice(0, 10) + '…' + id.slice(-6);
+                });
+
+                function persistActiveSession() {
+                    if (sessionId.value) {
+                        localStorage.setItem(STORAGE_KEY, sessionId.value);
                     }
                 }
-                
+
+                function formatSessionTime(iso) {
+                    if (!iso) return '';
+                    const date = new Date(iso);
+                    if (Number.isNaN(date.getTime())) return '';
+                    const now = new Date();
+                    const sameDay = date.toDateString() === now.toDateString();
+                    if (sameDay) {
+                        return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                    }
+                    return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+                }
+
+                async function loadRecentSessions() {
+                    isSessionsLoading.value = true;
+                    try {
+                        const response = await fetch('/api/chat/sessions?limit=10');
+                        if (!response.ok) return;
+                        const data = await response.json();
+                        recentSessions.value = data.sessions || [];
+                    } catch (error) {
+                        console.error('加载会话列表失败:', error);
+                    } finally {
+                        isSessionsLoading.value = false;
+                    }
+                }
+
+                async function loadChatHistory(targetSessionId) {
+                    isHistoryLoading.value = true;
+                    try {
+                        const response = await fetch(`/api/chat/history/${encodeURIComponent(targetSessionId)}`);
+                        if (!response.ok) {
+                            messages.value = [];
+                            return;
+                        }
+                        const history = await response.json();
+                        messages.value = historyToMessages(history);
+                        await nextTick();
+                        scrollToBottom();
+                    } catch (error) {
+                        console.error('加载聊天历史失败:', error);
+                        ElMessage.error('加载聊天历史失败');
+                    } finally {
+                        isHistoryLoading.value = false;
+                    }
+                }
+
+                async function selectSession(targetSessionId) {
+                    if (!targetSessionId || targetSessionId === sessionId.value) {
+                        return;
+                    }
+                    if (isLoading.value) {
+                        ElMessage.warning('请等待当前消息发送完成');
+                        return;
+                    }
+                    sessionId.value = targetSessionId;
+                    persistActiveSession();
+                    messages.value = [];
+                    uploadedFiles.value = [];
+                    await Promise.all([
+                        loadChatHistory(targetSessionId),
+                        refreshUploadedFiles(),
+                    ]);
+                }
+
+                function startNewChat() {
+                    if (isLoading.value) {
+                        ElMessage.warning('请等待当前消息发送完成');
+                        return;
+                    }
+                    sessionId.value = generateSessionId();
+                    persistActiveSession();
+                    messages.value = [];
+                    uploadedFiles.value = [];
+                }
+
                 async function sendMessage() {
-                    if (!inputMessage.value.trim() || isLoading.value) return;
-                    
+                    if (!inputMessage.value.trim() || isLoading.value || isHistoryLoading.value) return;
+
                     const userMessage = inputMessage.value.trim();
                     inputMessage.value = '';
-                    
-                    // 添加用户消息
+
                     const userMsg = {
                         id: Date.now(),
                         role: 'user',
                         content: userMessage,
-                        timestamp: new Date().toISOString()
+                        timestamp: new Date().toISOString(),
                     };
                     messages.value.push(userMsg);
-                    
-                    // 添加AI响应占位符
+
                     const aiMsg = {
                         id: Date.now() + 1,
                         role: 'assistant',
                         content: '',
                         isTyping: true,
-                        timestamp: new Date().toISOString()
+                        timestamp: new Date().toISOString(),
                     };
                     messages.value.push(aiMsg);
-                    
+
                     scrollToBottom();
                     isLoading.value = true;
-                    
+
                     try {
                         const response = await fetch('/api/chat/message', {
                             method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
+                            headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 message: userMessage,
-                                session_id: sessionId.value
-                            })
+                                session_id: sessionId.value,
+                            }),
                         });
-                        
-                        if (response.ok) {
-                            const data = await response.json();
-                            aiMsg.content = data.ai_response;
-                            aiMsg.isTyping = false;
-                            aiMsg.citations = data.citations || [];
-                        } else {
-                            throw new Error('发送消息失败');
+
+                        if (!response.ok) {
+                            const err = await response.json().catch(() => ({}));
+                            throw new Error(err.detail || '发送消息失败');
                         }
-                    } catch (error) {
-                        aiMsg.content = '抱歉，发生错误：' + error.message;
+
+                        const data = await response.json();
+                        if (data.session_id) {
+                            sessionId.value = data.session_id;
+                            persistActiveSession();
+                        }
+                        aiMsg.content = data.ai_response;
                         aiMsg.isTyping = false;
-                        ElMessage.error('发送消息失败');
+                        aiMsg.citations = data.citations || [];
+                        await loadRecentSessions();
+                    } catch (error) {
+                        aiMsg.content = '抱歉，发生错误：' + (error.message || '未知错误');
+                        aiMsg.isTyping = false;
+                        ElMessage.error(error.message || '发送消息失败');
                     } finally {
                         isLoading.value = false;
                         scrollToBottom();
@@ -365,20 +591,18 @@
 
                     const formData = new FormData();
                     formData.append('session_id', sessionId.value);
-                    Array.from(files).forEach(file => formData.append('files', file));
+                    Array.from(files).forEach((file) => formData.append('files', file));
 
                     isUploading.value = true;
                     try {
                         const response = await fetch('/api/chat/upload', {
                             method: 'POST',
-                            body: formData
+                            body: formData,
                         });
-
                         if (!response.ok) {
                             const err = await response.json().catch(() => ({}));
                             throw new Error(err.detail || '文件上传失败');
                         }
-
                         const data = await response.json();
                         uploadedFiles.value = Array.from(new Set([...(data.uploaded_files || [])]));
                         ElMessage.success(`上传成功，已索引 ${data.indexed_chunks} 个文本片段`);
@@ -393,12 +617,10 @@
 
                 async function refreshUploadedFiles() {
                     try {
-                        const response = await fetch(`/api/chat/files/${sessionId.value}`);
-                        if (!response.ok) {
-                            return;
-                        }
+                        const response = await fetch(`/api/chat/files/${encodeURIComponent(sessionId.value)}`);
+                        if (!response.ok) return;
                         const data = await response.json();
-                        uploadedFiles.value = (data.files || []).map(item => item.filename);
+                        uploadedFiles.value = (data.files || []).map((item) => item.filename);
                     } catch (error) {
                         console.error('获取文件列表失败:', error);
                     }
@@ -407,14 +629,14 @@
                 async function deleteUploadedFile(filename) {
                     try {
                         const response = await fetch(
-                            `/api/chat/files/${sessionId.value}?filename=${encodeURIComponent(filename)}`,
+                            `/api/chat/files/${encodeURIComponent(sessionId.value)}?filename=${encodeURIComponent(filename)}`,
                             { method: 'DELETE' }
                         );
                         if (!response.ok) {
                             const err = await response.json().catch(() => ({}));
                             throw new Error(err.detail || '删除文件失败');
                         }
-                        uploadedFiles.value = uploadedFiles.value.filter(f => f !== filename);
+                        uploadedFiles.value = uploadedFiles.value.filter((f) => f !== filename);
                         ElMessage.success(`已删除文件：${filename}`);
                     } catch (error) {
                         ElMessage.error(error.message || '删除文件失败');
@@ -424,9 +646,10 @@
                 async function reindexFiles() {
                     isReindexing.value = true;
                     try {
-                        const response = await fetch(`/api/chat/files/${sessionId.value}/reindex`, {
-                            method: 'POST'
-                        });
+                        const response = await fetch(
+                            `/api/chat/files/${encodeURIComponent(sessionId.value)}/reindex`,
+                            { method: 'POST' }
+                        );
                         if (!response.ok) {
                             const err = await response.json().catch(() => ({}));
                             throw new Error(err.detail || '重建索引失败');
@@ -439,7 +662,7 @@
                         isReindexing.value = false;
                     }
                 }
-                
+
                 function scrollToBottom() {
                     nextTick(() => {
                         if (messagesContainer.value) {
@@ -447,28 +670,53 @@
                         }
                     });
                 }
-                
+
+                async function initializeApp() {
+                    await loadRecentSessions();
+
+                    const storedId = localStorage.getItem(STORAGE_KEY);
+                    const knownIds = new Set(recentSessions.value.map((s) => s.session_id));
+
+                    if (storedId && knownIds.has(storedId)) {
+                        sessionId.value = storedId;
+                        await loadChatHistory(storedId);
+                        await refreshUploadedFiles();
+                    } else if (recentSessions.value.length) {
+                        await selectSession(recentSessions.value[0].session_id);
+                    } else {
+                        startNewChat();
+                    }
+                }
+
                 onMounted(() => {
-                    scrollToBottom();
+                    initializeApp();
                 });
-                
+
                 return {
                     messages,
                     inputMessage,
                     isLoading,
                     isUploading,
                     isReindexing,
+                    isHistoryLoading,
+                    isSessionsLoading,
+                    sessionId,
+                    shortSessionId,
+                    recentSessions,
                     messagesContainer,
                     fileInput,
                     uploadedFiles,
                     sendMessage,
+                    selectSession,
+                    startNewChat,
+                    formatSessionTime,
                     triggerFileSelect,
                     onFileSelected,
                     refreshUploadedFiles,
                     deleteUploadedFile,
-                    reindexFiles
+                    reindexFiles,
                 };
-            }
+            },
         }).use(ElementPlus).mount('#app');
     </script>
 </body>

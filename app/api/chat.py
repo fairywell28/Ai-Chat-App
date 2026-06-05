@@ -13,6 +13,12 @@ from app.database import get_db
 from app.models import Conversation, UserSettings
 from app.services.openai_service import openai_service
 from app.services.rag_service import rag_service
+from app.services.session_service import (
+    DEFAULT_SESSION_LIMIT,
+    get_llm_context_messages,
+    get_session_history,
+    list_recent_sessions,
+)
 from config import get_config
 
 # 配置日志
@@ -267,43 +273,29 @@ async def stream_message(
     )
 
 
+@router.get("/sessions")
+async def get_recent_sessions(
+    limit: int = DEFAULT_SESSION_LIMIT,
+    db: Session = Depends(get_db),
+):
+    """List recent chat sessions for the sidebar (default: 10)."""
+    safe_limit = max(1, min(limit, 50))
+    return {
+        "sessions": list_recent_sessions(db, limit=safe_limit),
+    }
+
+
 @router.get("/history/{session_id}")
 async def get_chat_history(
     session_id: str,
     limit: int = 50,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """
-    获取指定会话的聊天历史
-    """
-    conversations = db.query(Conversation).filter(
-        Conversation.session_id == session_id
-    ).order_by(Conversation.created_at.desc()).limit(limit).all()
-
-    return [
-        {
-            "id": conv.id,
-            "user_message": conv.user_message,
-            "ai_response": conv.ai_response,
-            "created_at": conv.created_at.isoformat(),
-            "model_used": conv.model_used
-        }
-        for conv in reversed(conversations)  # 按时间正序返回
-    ]
+    """Return chronological conversation turns for a session."""
+    return get_session_history(db, session_id, limit=limit)
 
 
 async def get_conversation_history(session_id: str,
                                    db: Session) -> List[Dict[str, str]]:
-    """
-    获取格式化后的对话历史
-    """
-    conversations = db.query(Conversation).filter(
-        Conversation.session_id == session_id
-    ).order_by(Conversation.created_at.asc()).limit(10).all()  # 最近10条对话
-
-    messages = []
-    for conv in conversations:
-        messages.append({"role": "user", "content": conv.user_message})
-        messages.append({"role": "assistant", "content": conv.ai_response})
-
-    return messages
+    """Most recent conversation turns for LLM context (default: 10 turns)."""
+    return get_llm_context_messages(db, session_id, turn_limit=10)
