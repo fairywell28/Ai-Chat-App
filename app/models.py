@@ -1,22 +1,28 @@
 # coding: utf-8
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, Text, DateTime, Index
 from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime
+
+from app.utils.time import utc_now
+from config import get_config
 
 Base = declarative_base()
 
-# setting the default LLM model, @TODO setting by config file in future
-default_llm = "gpt-4.1-mini"
+_cfg = get_config()
+
 
 class Conversation(Base):
     __tablename__ = "conversations"
+    __table_args__ = (
+        Index("ix_conversations_session_created", "session_id", "created_at"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(String(100), index=True, nullable=False)
     user_message = Column(Text, nullable=False)
     ai_response = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    model_used = Column(String(50), default=default_llm)
+    citations_json = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    model_used = Column(String(50), default=_cfg.DEFAULT_LLM_MODEL)
 
 
 class UserSettings(Base):
@@ -26,7 +32,10 @@ class UserSettings(Base):
     session_id = Column(String(100), unique=True, index=True)
     temperature = Column(Integer, default=7)  # 0-10, 默认7
     max_tokens = Column(Integer, default=1000)
-    model_preference = Column(String(50), default=default_llm)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+    model_preference = Column(String(50), default=_cfg.DEFAULT_LLM_MODEL)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+    )

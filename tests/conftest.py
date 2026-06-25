@@ -61,4 +61,6 @@ def clean_db_tables(db_session):
 def reset_rag_flags(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(chat.rag_service, "enabled", True, raising=False)
     monkeypatch.setattr(chat.rag_service, "disabled_reason", "", raising=False)
-    monkeypatch.setattr(chat.cfg, "RAG_TOP_K", 3, raising=False)
+    monkeypatch.setattr(chat.rag_service, "top_k", 3, raising=False)
+    monkeypatch.setattr(chat.chat_service.cfg, "RAG_TOP_K", 3, raising=False)
+    chat.rag_service.clear_index_cache()

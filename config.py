@@ -7,6 +7,8 @@ class Config:
     """基础环境配置"""
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.lingyaai.cn/v1/")
+    #DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "gpt-4.1-mini")
+    DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "deepseek-v4-flash")
     DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./chat_app.db")
     DEBUG = os.getenv("DEBUG", "False").lower() == "true"
     HOST = os.getenv("HOST", "0.0.0.0")
@@ -15,6 +17,8 @@ class Config:
     RAG_CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", 1000))
     RAG_CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", 200))
     RAG_TOP_K = int(os.getenv("RAG_TOP_K", 4))
+    RAG_INDEX_CACHE_SIZE = int(os.getenv("RAG_INDEX_CACHE_SIZE", 32))
+    LLM_CONTEXT_TURN_LIMIT = int(os.getenv("LLM_CONTEXT_TURN_LIMIT", 10))
 
 
 class DevelopmentConfig(Config):
@@ -24,7 +28,6 @@ class DevelopmentConfig(Config):
 class TestingConfig(Config):
     """测试环境配置"""
     TESTING = True
-    OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.lingyaai.cn/v1/")
 
 
 class ProductionConfig(Config):

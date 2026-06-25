@@ -1,27 +1,39 @@
 # coding: utf-8
-import os
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
+
 from app.models import Base
+from config import get_config
 
-# 数据库配置
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./chat_app.db")
+_cfg = get_config()
 
-# 创建数据库引擎
 engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False}  # SQLite专用参数
+    _cfg.DATABASE_URL,
+    connect_args={"check_same_thread": False},
 )
 
-# 创建SessionLocal类
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# 创建数据库表
-def create_tables():
+
+def _ensure_conversations_citations_column() -> None:
+    """Lightweight schema patch for existing SQLite databases."""
+    inspector = inspect(engine)
+    if "conversations" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("conversations")}
+    if "citations_json" in columns:
+        return
+    with engine.begin() as connection:
+        connection.execute(
+            text("ALTER TABLE conversations ADD COLUMN citations_json TEXT")
+        )
+
+
+def create_tables() -> None:
     Base.metadata.create_all(bind=engine)
+    _ensure_conversations_citations_column()
 
 
-# 数据库依赖
 def get_db():
     db = SessionLocal()
     try:

@@ -1,9 +1,9 @@
 # coding: utf-8
 from __future__ import annotations
 
-import os
 import shutil
 import logging
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Iterable, List, Tuple, Dict
 from uuid import uuid4
@@ -50,6 +50,8 @@ class RAGService:
         self.enabled = True
         self.disabled_reason = ""
         self.top_k = cfg.RAG_TOP_K
+        self._cache_max_size = max(1, cfg.RAG_INDEX_CACHE_SIZE)
+        self._store_cache: OrderedDict[str, Any] = OrderedDict()
 
         api_key = cfg.OPENAI_API_KEY
         base_url = cfg.OPENAI_BASE_URL
@@ -73,6 +75,9 @@ class RAGService:
             chunk_size=cfg.RAG_CHUNK_SIZE,
             chunk_overlap=cfg.RAG_CHUNK_OVERLAP,
         )
+
+    def clear_index_cache(self) -> None:
+        self._store_cache.clear()
 
     def _session_index_path(self, session_id: str) -> Path:
         return self.index_root / session_id
@@ -107,7 +112,7 @@ class RAGService:
             "session_id": session_id,
         })]
 
-    def _load_or_create_store(self, session_id: str) -> FAISS | None:
+    def _load_store_from_disk(self, session_id: str) -> FAISS | None:
         index_path = self._session_index_path(session_id)
         if not index_path.exists():
             return None
@@ -117,10 +122,31 @@ class RAGService:
             allow_dangerous_deserialization=True,
         )
 
+    def _get_store(self, session_id: str) -> FAISS | None:
+        cached = self._store_cache.get(session_id)
+        if cached is not None:
+            self._store_cache.move_to_end(session_id)
+            return cached
+
+        store = self._load_store_from_disk(session_id)
+        if store is not None:
+            self._store_cache[session_id] = store
+            self._store_cache.move_to_end(session_id)
+            while len(self._store_cache) > self._cache_max_size:
+                self._store_cache.popitem(last=False)
+        return store
+
+    def _invalidate_store_cache(self, session_id: str) -> None:
+        self._store_cache.pop(session_id, None)
+
     def _save_store(self, session_id: str, store: FAISS) -> None:
         index_path = self._session_index_path(session_id)
         index_path.mkdir(parents=True, exist_ok=True)
         store.save_local(str(index_path))
+        self._store_cache[session_id] = store
+        self._store_cache.move_to_end(session_id)
+        while len(self._store_cache) > self._cache_max_size:
+            self._store_cache.popitem(last=False)
 
     def _rebuild_index_from_saved_files(self, session_id: str) -> int:
         upload_dir = self._session_upload_dir(session_id)
@@ -137,12 +163,14 @@ class RAGService:
         if not documents:
             if index_path.exists():
                 shutil.rmtree(index_path, ignore_errors=True)
+            self._invalidate_store_cache(session_id)
             return 0
 
         chunks = self.text_splitter.split_documents(documents)
         if not chunks:
             if index_path.exists():
                 shutil.rmtree(index_path, ignore_errors=True)
+            self._invalidate_store_cache(session_id)
             return 0
 
         store = FAISS.from_documents(chunks, self.embeddings)
@@ -186,7 +214,7 @@ class RAGService:
         if not chunks:
             return 0, accepted_names
 
-        store = self._load_or_create_store(session_id)
+        store = self._get_store(session_id)
         if store is None:
             store = FAISS.from_documents(chunks, self.embeddings)
         else:
@@ -198,7 +226,7 @@ class RAGService:
     def retrieve_context(self, session_id: str, query: str, k: int | None = None) -> List[Document]:
         if not self.enabled:
             return []
-        store = self._load_or_create_store(session_id)
+        store = self._get_store(session_id)
         if store is None:
             return []
         return store.similarity_search(query, k=k or self.top_k)

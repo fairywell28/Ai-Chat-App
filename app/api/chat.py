@@ -1,66 +1,31 @@
 # coding: utf-8
-from typing import List, Dict
-from datetime import datetime
-import uuid
 import json
 import logging
+
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+
 from app.database import get_db
-from app.models import Conversation, UserSettings
-from app.services.openai_service import openai_service
+from app.services.chat_service import chat_service
 from app.services.rag_service import rag_service
 from app.services.session_service import (
     DEFAULT_SESSION_LIMIT,
-    get_llm_context_messages,
     get_session_history,
     list_recent_sessions,
 )
-from config import get_config
 
-# 配置日志
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
-cfg = get_config()
 
-# setting the default LLM model, @TODO setting by config file in future
-default_llm = "gpt-4.1-mini"
 
 class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None
-
-
-# @SampleCode Building RAG messages for LLM: history + current + RAG
-def build_rag_messages(
-    history_messages: List[Dict[str, str]],
-    user_message: str,
-    rag_context_docs: List[Dict[str, str]] | List
-) -> List[Dict[str, str]]:
-    if not rag_context_docs:
-        return history_messages + [{"role": "user", "content": user_message}]
-
-    context_blocks = []
-    for idx, doc in enumerate(rag_context_docs, 1):
-        source = doc.metadata.get("filename", "unknown")
-        context_blocks.append(
-            f"[资料{idx} | 来源: {source}]\n{doc.page_content}"
-        )
-
-    rag_instruction = (
-        "你是专业的AI助手。回答用户问题时，请优先依据提供的资料内容。"
-        "如果资料中无法支持结论，请明确说明并给出通用建议，不要编造来源。"
-        "\n\n"
-        "以下是可参考资料：\n"
-        f"{chr(10).join(context_blocks)}"
-    )
-    return [{"role": "system", "content": rag_instruction}] + history_messages + [
-        {"role": "user", "content": user_message}
-    ]
 
 
 @router.post("/upload")
@@ -124,152 +89,33 @@ async def reindex_files(session_id: str):
 
 @router.post("/message")
 async def send_message(payload: ChatRequest, db: Session = Depends(get_db)):
-    """
-    发送消息并获取AI回复
-    """
-    # 从请求体中获取数据并生成/使用session_id
-    message = payload.message
-    session_id = payload.session_id
-
-    if not session_id:
-        session_id = str(uuid.uuid4())
-
-    # 获取用户设置
-    user_settings = db.query(UserSettings).filter(
-        UserSettings.session_id == session_id
-    ).first()
-
-    if not user_settings:
-        # 创建默认用户设置
-        user_settings = UserSettings(
-            session_id=session_id,
-            temperature=7,
-            max_tokens=1000,
-            model_preference=default_llm
-        )
-        db.add(user_settings)
-        db.commit()
-        db.refresh(user_settings)
-
-    # 构建历史对话
-    conversation_history = await get_conversation_history(session_id, db)
-
-    # 添加用户新消息（结合RAG检索）
-    rag_docs = rag_service.retrieve_context(
-        session_id=session_id,
-        query=message,
-        k=cfg.RAG_TOP_K,
-    )
-    citations = rag_service.citations_from_docs(rag_docs)
-    messages = build_rag_messages(conversation_history, message, rag_docs)
-
     try:
-        # 调用OpenAI服务
-        logger.debug(f"messages={messages}, model={user_settings.model_preference}, temperature={user_settings.temperature/10.0}, max_tokens={user_settings.max_tokens}")
-        logger.debug("Start getting response...")
-        response = await openai_service.chat_completion(
-            messages=messages,
-            model=user_settings.model_preference,
-            temperature=user_settings.temperature / 10.0,  # 转换为0-1范围
-            max_tokens=user_settings.max_tokens
+        return await chat_service.complete_message(
+            db=db,
+            session_id=payload.session_id,
+            user_message=payload.message,
         )
-        logger.debug("Finished getting the response.")
-
-        # 保存对话记录
-        conversation = Conversation(
-            session_id=session_id,
-            user_message=message,
-            ai_response=response,
-            model_used=user_settings.model_preference
-        )
-        db.add(conversation)
-        db.commit()
-
-        return {
-            "session_id": session_id,
-            "user_message": message,
-            "ai_response": response,
-            "citations": citations,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/message/stream")
-async def stream_message(
-    payload: ChatRequest,
-    db: Session = Depends(get_db)
-):
-    """
-    流式消息响应（实时打字效果）
-    """
-    message = payload.message
-    session_id = payload.session_id
-
-    if not session_id:
-        session_id = str(uuid.uuid4())
-
-    # 获取用户设置
-    user_settings = db.query(UserSettings).filter(
-        UserSettings.session_id == session_id
-    ).first()
-
-    if not user_settings:
-        # 创建默认用户设置
-        user_settings = UserSettings(
-            session_id=session_id,
-            temperature=7,
-            max_tokens=1000,
-            model_preference=default_llm
-        )
-        db.add(user_settings)
-        db.commit()
-        db.refresh(user_settings)
-
-    # 构建历史对话
-    conversation_history = await get_conversation_history(session_id, db)
-
-    # 添加用户新消息（结合RAG检索）
-    rag_docs = rag_service.retrieve_context(
-        session_id=session_id,
-        query=message,
-        k=cfg.RAG_TOP_K,
-    )
-    citations = rag_service.citations_from_docs(rag_docs)
-    messages = build_rag_messages(conversation_history, message, rag_docs)
-
+async def stream_message(payload: ChatRequest, db: Session = Depends(get_db)):
     async def generate():
         try:
-            full_response = ""
-            yield f"data: {json.dumps({'citations': citations})}\n\n"
-            async for chunk in openai_service.stream_chat_completion(
-                messages=messages,
-                model=user_settings.model_preference,
-                temperature=user_settings.temperature / 10.0,
-                max_tokens=user_settings.max_tokens
+            async for event in chat_service.stream_message(
+                db=db,
+                session_id=payload.session_id,
+                user_message=payload.message,
             ):
-                full_response += chunk
-                yield f"data: {json.dumps({'content': chunk})}\n\n"
-
-            # 保存完整对话记录
-            conversation = Conversation(
-                session_id=session_id,
-                user_message=message,
-                ai_response=full_response,
-                model_used=user_settings.model_preference
-            )
-            db.add(conversation)
-            db.commit()
-
+                yield f"data: {event}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
     return StreamingResponse(
         generate(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache"}
+        headers={"Cache-Control": "no-cache"},
     )
 
 
@@ -278,7 +124,6 @@ async def get_recent_sessions(
     limit: int = DEFAULT_SESSION_LIMIT,
     db: Session = Depends(get_db),
 ):
-    """List recent chat sessions for the sidebar (default: 10)."""
     safe_limit = max(1, min(limit, 50))
     return {
         "sessions": list_recent_sessions(db, limit=safe_limit),
@@ -291,11 +136,4 @@ async def get_chat_history(
     limit: int = 50,
     db: Session = Depends(get_db),
 ):
-    """Return chronological conversation turns for a session."""
     return get_session_history(db, session_id, limit=limit)
-
-
-async def get_conversation_history(session_id: str,
-                                   db: Session) -> List[Dict[str, str]]:
-    """Most recent conversation turns for LLM context (default: 10 turns)."""
-    return get_llm_context_messages(db, session_id, turn_limit=10)

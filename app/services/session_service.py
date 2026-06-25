@@ -1,17 +1,28 @@
 # coding: utf-8
 from __future__ import annotations
 
-from datetime import datetime
+import json
 from typing import Any, Dict, List
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import Conversation
+from app.utils.time import serialize_utc_datetime
 
 DEFAULT_SESSION_LIMIT = 10
 TITLE_MAX_LEN = 48
 PREVIEW_MAX_LEN = 80
+
+
+def parse_citations_json(raw: str | None) -> List[Dict[str, str]]:
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    return parsed if isinstance(parsed, list) else []
 
 
 def _truncate(text: str, max_len: int) -> str:
@@ -26,7 +37,8 @@ def conversation_to_history_item(conv: Conversation) -> Dict[str, Any]:
         "id": conv.id,
         "user_message": conv.user_message,
         "ai_response": conv.ai_response,
-        "created_at": conv.created_at.isoformat() if conv.created_at else None,
+        "citations": parse_citations_json(conv.citations_json),
+        "created_at": serialize_utc_datetime(conv.created_at),
         "model_used": conv.model_used,
     }
 
@@ -101,14 +113,9 @@ def list_recent_sessions(
                 "session_id": row.session_id,
                 "title": _truncate(preview_source, TITLE_MAX_LEN),
                 "preview": _truncate(preview_source, PREVIEW_MAX_LEN),
-                "updated_at": _serialize_dt(row.updated_at),
+                "updated_at": serialize_utc_datetime(row.updated_at),
                 "message_count": int(row.message_count or 0),
             }
         )
     return sessions
 
-
-def _serialize_dt(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    return value.isoformat()

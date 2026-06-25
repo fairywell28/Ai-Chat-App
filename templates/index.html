@@ -413,7 +413,7 @@
                     role: 'assistant',
                     content: item.ai_response,
                     timestamp: item.created_at,
-                    citations: [],
+                    citations: item.citations || [],
                 },
             ]);
         }
@@ -447,7 +447,28 @@
 
                 function formatSessionTime(iso) {
                     if (!iso) return '';
-                    const date = new Date(iso);
+
+                    // Create a Date instance while ensuring timestamps produced/stored in UTC
+                    // are interpreted as UTC by the browser. Handles variants like:
+                    // - numeric ms epoch
+                    // - ISO with timezone (OK)
+                    // - "YYYY-MM-DD HH:MM:SS" (no timezone) -> treat as UTC
+                    let date;
+                    if (typeof iso === 'number') {
+                        date = new Date(iso);
+                    } else {
+                        let s = String(iso).trim();
+                        // If format is "YYYY-MM-DD HH:MM:SS", convert to ISO and append Z
+                        if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
+                            s = s.replace(' ', 'T') + 'Z';
+                        }
+                        // If string has a date-time but no timezone, append Z to force UTC
+                        if (/^\d{4}-\d{2}-\d{2}T/.test(s) && !/[zZ]|[+\-]\d{2}:?\d{2}$/.test(s)) {
+                            s = s + 'Z';
+                        }
+                        date = new Date(s);
+                    }
+
                     if (Number.isNaN(date.getTime())) return '';
                     const now = new Date();
                     const sameDay = date.toDateString() === now.toDateString();

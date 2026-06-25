@@ -1,23 +1,25 @@
 # coding: utf-8
-import os
 import logging
 from typing import List, Dict, Optional
+
 from openai import OpenAI
 
+from config import get_config
 
-# 配置日志
 logger = logging.getLogger(__name__)
 
+
 class OpenAIService:
-    def __init__(self):
-        # 从环境变量获取API密钥；缺失时不要在导入阶段直接抛错，
-        # 以免导致整个服务无法启动。
-        api_key = os.getenv("OPENAI_API_KEY")
+    def __init__(self) -> None:
+        cfg = get_config()
+        self.cfg = cfg
         self.init_error: Optional[str] = None
         self.client = None
+        self.default_model = cfg.DEFAULT_LLM_MODEL
 
+        api_key = cfg.OPENAI_API_KEY
         if api_key:
-            self.client = OpenAI(base_url="https://api.lingyaai.cn/v1/", api_key=api_key)
+            self.client = OpenAI(base_url=cfg.OPENAI_BASE_URL, api_key=api_key)
         else:
             self.init_error = "OPENAI_API_KEY环境变量未设置"
             raise RuntimeError(self.init_error or "OpenAI API KEY not initialized")
@@ -25,24 +27,24 @@ class OpenAIService:
     async def chat_completion(
         self,
         messages: List[Dict[str, str]],
-        model: str = "gpt-4.1-mini",
+        model: str | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 1000
+        max_tokens: int = 1000,
     ) -> str:
-        """
-        调用OpenAI聊天补全API
-        """
         if not self.client:
             raise RuntimeError(self.init_error or "OpenAI client not initialized")
 
+        resolved_model = model or self.default_model
         logger.debug("Start chat completions...")
+        logger.debug(f"default_model={self.default_model}")
+        logger.debug(f"resolved_model={resolved_model}")
         try:
             response = self.client.chat.completions.create(
-                model=model,
+                model=resolved_model,
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                stream=False
+                stream=False,
             )
             logger.debug("Finished chat completions.")
             return response.choices[0].message.content
@@ -52,24 +54,22 @@ class OpenAIService:
     async def stream_chat_completion(
         self,
         messages: List[Dict[str, str]],
-        model: str = "gpt-4.1-mini",
+        model: str | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 1000
+        max_tokens: int = 1000,
     ):
-        """
-        流式聊天补全（用于实时打字效果）
-        """
         if not self.client:
             yield f"错误：{self.init_error or 'OpenAI client not initialized'}"
             return
 
+        resolved_model = model or self.default_model
         try:
             response = self.client.chat.completions.create(
-                model=model,
+                model=resolved_model,
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                stream=True
+                stream=True,
             )
             for chunk in response:
                 if chunk.choices[0].delta.content is not None:
@@ -78,5 +78,4 @@ class OpenAIService:
             yield f"错误：{str(e)}"
 
 
-# 创建全局实例
 openai_service = OpenAIService()

@@ -12,12 +12,17 @@ def test_health_endpoint(client):
     assert response.json() == {"status": "healthy"}
 
 
+from config import get_config
+
+
 def test_message_creates_session_and_returns_citations(client, monkeypatch):
+    expected_model = get_config().DEFAULT_LLM_MODEL
+
     async def fake_chat_completion(**kwargs):
-        assert kwargs["model"] == "gpt-4.1-mini"
+        assert kwargs["model"] == expected_model
         return "这是测试回复"
 
-    monkeypatch.setattr(chat.openai_service, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(chat.chat_service.llm_service, "chat_completion", fake_chat_completion)
     monkeypatch.setattr(
         chat.rag_service,
         "retrieve_context",
@@ -108,7 +113,7 @@ def test_stream_emits_citations_first(client, monkeypatch):
             yield "B"
         return iterator()
 
-    monkeypatch.setattr(chat.openai_service, "stream_chat_completion", fake_stream_chat_completion)
+    monkeypatch.setattr(chat.chat_service.llm_service, "stream_chat_completion", fake_stream_chat_completion)
 
     response = client.post(
         "/api/chat/message/stream",

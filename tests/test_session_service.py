@@ -1,13 +1,56 @@
 # coding: utf-8
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.models import Conversation, UserSettings
 from app.services.session_service import (
     get_session_history,
     list_recent_sessions,
 )
+from app.utils.time import serialize_utc_datetime
+
+
+def test_serialize_utc_datetime_naive_assumes_utc():
+    naive = datetime(2025, 6, 16, 11, 13, 34, 748185)
+    assert serialize_utc_datetime(naive) == "2025-06-16T11:13:34.748185Z"
+
+
+def test_serialize_utc_datetime_aware_utc_uses_z_suffix():
+    aware = datetime(2025, 6, 16, 11, 13, 34, tzinfo=timezone.utc)
+    assert serialize_utc_datetime(aware) == "2025-06-16T11:13:34+00:00".replace("+00:00", "Z")
+
+
+def test_serialize_utc_datetime_none():
+    assert serialize_utc_datetime(None) is None
+
+
+def test_list_recent_sessions_updated_at_has_utc_suffix(db_session):
+    _add_turn(
+        db_session,
+        "tz-session",
+        "hello",
+        "world",
+        datetime(2025, 6, 16, 11, 0, 0),
+    )
+    db_session.commit()
+
+    sessions = list_recent_sessions(db_session, limit=1)
+    assert sessions[0]["updated_at"].endswith("Z")
+
+
+def test_get_session_history_created_at_has_utc_suffix(db_session):
+    _add_turn(
+        db_session,
+        "tz-history",
+        "hello",
+        "world",
+        datetime(2025, 6, 16, 11, 0, 0),
+    )
+    db_session.commit()
+
+    history = get_session_history(db_session, "tz-history")
+    assert history[0]["created_at"].endswith("Z")
 
 
 def _add_turn(db, session_id: str, user_msg: str, ai_msg: str, when: datetime):

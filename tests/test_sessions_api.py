@@ -40,6 +40,7 @@ def test_list_sessions_endpoint(client, db_session):
     assert sessions[0]["session_id"] == "beta"
     assert sessions[0]["title"] == "Beta is newer"
     assert sessions[1]["session_id"] == "alpha"
+    assert sessions[0]["updated_at"].endswith("Z")
 
 
 def test_list_sessions_limit_query(client, db_session):
@@ -59,7 +60,7 @@ def test_switch_session_loads_history(client, db_session, monkeypatch):
         assert kwargs["messages"][2]["content"] == "Continue alpha"
         return "continued"
 
-    monkeypatch.setattr(chat.openai_service, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(chat.chat_service.llm_service, "chat_completion", fake_chat_completion)
     monkeypatch.setattr(chat.rag_service, "retrieve_context", lambda **_: [])
     monkeypatch.setattr(chat.rag_service, "citations_from_docs", lambda _: [])
 
@@ -81,7 +82,7 @@ def test_new_message_updates_session_list(client, monkeypatch):
     async def fake_chat_completion(**kwargs):
         return "ok"
 
-    monkeypatch.setattr(chat.openai_service, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(chat.chat_service.llm_service, "chat_completion", fake_chat_completion)
     monkeypatch.setattr(chat.rag_service, "retrieve_context", lambda **_: [])
     monkeypatch.setattr(chat.rag_service, "citations_from_docs", lambda _: [])
 

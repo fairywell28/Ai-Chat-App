@@ -67,7 +67,7 @@ def test_sessions_do_not_leak_context_between_ids(client, db_session, monkeypatc
         captured["messages"] = kwargs["messages"]
         return "beta response"
 
-    monkeypatch.setattr(chat.openai_service, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(chat.chat_service.llm_service, "chat_completion", fake_chat_completion)
     monkeypatch.setattr(chat.rag_service, "retrieve_context", lambda **_: [])
     monkeypatch.setattr(chat.rag_service, "citations_from_docs", lambda _: [])
 
@@ -120,7 +120,7 @@ def test_second_message_moves_session_to_top(client, db_session, monkeypatch):
     async def fake_chat_completion(**_kwargs):
         return "ok"
 
-    monkeypatch.setattr(chat.openai_service, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(chat.chat_service.llm_service, "chat_completion", fake_chat_completion)
     monkeypatch.setattr(chat.rag_service, "retrieve_context", lambda **_: [])
     monkeypatch.setattr(chat.rag_service, "citations_from_docs", lambda _: [])
 
@@ -146,7 +146,7 @@ def test_llm_context_includes_up_to_ten_prior_turns(client, db_session, monkeypa
         captured["messages"] = kwargs["messages"]
         return "ok"
 
-    monkeypatch.setattr(chat.openai_service, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(chat.chat_service.llm_service, "chat_completion", fake_chat_completion)
     monkeypatch.setattr(chat.rag_service, "retrieve_context", lambda **_: [])
     monkeypatch.setattr(chat.rag_service, "citations_from_docs", lambda _: [])
 
